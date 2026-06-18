@@ -1,0 +1,378 @@
+Pornire: docker run -p 9092:9092 -p 2181:2181 spotify/kafka apoi mvn spring-boot:run.
+Lab 3 - WeatherApp
+3.1 Model API + incapsulare + inlantuire
+Enunt
+Pornind de la exemplul de proiectare și implementare a unei aplicații care primește informații meteo (adică utilizând și serviciile de acolo eventual cu modificări) să se aplice modelul de proiectare de tip API și astfel să se încapsuleze aplicația de laborator.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului.
+Se va utiliza înlănțuirea și respectarea principiilor SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Client --> Ctrl[WeatherAppController]
+    Ctrl --> API[WeatherAPIService<br/>poarta]
+    API --> Loc[LocationSearchService]
+    API --> FC[WeatherForecastService]
+    FC --> Time[TimeService]
+    Loc --> Meta[metaweather.com]
+    FC --> Meta
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IWeatherAPI { <<interface>> +getForecast(String) }
+    class LocationSearchInterface { <<interface>> }
+    class WeatherForecastInterface { <<interface>> }
+    class WeatherAPIService
+    class LocationSearchService
+    class WeatherForecastService
+    class TimeService
+    IWeatherAPI <|.. WeatherAPIService
+    LocationSearchInterface <|.. LocationSearchService
+    WeatherForecastInterface <|.. WeatherForecastService
+    WeatherAPIService --> LocationSearchInterface
+    WeatherAPIService --> WeatherForecastInterface
+    WeatherForecastService --> TimeService
+
+
+Proiect baza: copiezi labsd03\SD_Laborator_03\WeatherApp.
+Fisiere noi
+src/main/kotlin/com/sd/laborator/interfaces/IWeatherAPI.kt (NOU - poarta)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+interface IWeatherAPI { fun getForecast(city: String): String }
+
+
+src/main/kotlin/com/sd/laborator/services/WeatherAPIService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.*
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.stereotype.Service
+
+@Service
+class WeatherAPIService : IWeatherAPI {
+    @Autowired private lateinit var loc: LocationSearchInterface
+    @Autowired private lateinit var fc: WeatherForecastInterface
+
+    override fun getForecast(city: String): String {
+        val id = loc.getLocationId(city)
+        if (id == -1) return "Nu s-a gasit orasul"
+        return fc.getForecastData(id).toString()
+    }
+}
+
+
+Modifica WeatherAppController.kt:
+
+
+
+
+Kotlin
+@Controller
+class WeatherAppController {
+    @Autowired private lateinit var api: IWeatherAPI
+
+    @RequestMapping("/getforecast/{location}", method = [RequestMethod.GET])
+    @ResponseBody
+    fun get(@PathVariable location: String): String = api.getForecast(location)
+}
+
+
+3.2 Scriere fisier + filtru + dirijor
+Enunt
+Pornind de la exemplul de proiectare și implementare a unei aplicații care primește informații meteo (adică utilizând și serviciile de acolo eventual cu modificări) să se realizeze următoarele:
+să se proiecteze și să se implementeze un serviciu care va scrie într-un fișier (de orice format la alegere) informațiile recepționate.
+să se aplice modelul de proiectare de tip filtru și a celui de tip dirijor în proiectarea și implementarea unui serviciu care extrage din fluxul de date informațiile legate de numelui orașului, temperatura minimă și maximă (utilizând serviciul anterior) și le va scrie în fișiere cu acest nume.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului.
+Se va utiliza înlănțuirea și respectarea principiilor SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Ctrl[Controller] --> Dir[DirijorService]
+    Dir --> API[WeatherAPIService]
+    API --> Filt[FilterService]
+    Filt --> Writer[FileWriterService]
+    Writer --> F1[Bucuresti.txt]
+    Writer --> F2[Cluj.txt]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IFilterService { <<interface>> +filter(String) CityTemp }
+    class IFileWriter { <<interface>> +write(CityTemp) }
+    class CityTemp { +city: String +min: Int +max: Int }
+    class FilterService
+    class FileWriterService
+    class DirijorService { -api -filter -writer }
+    IFilterService <|.. FilterService
+    IFileWriter <|.. FileWriterService
+    DirijorService --> IFilterService
+    DirijorService --> IFileWriter
+    DirijorService --> IWeatherAPI
+
+
+Fisiere noi
+interfaces/IFilterService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+data class CityTemp(val city: String, val min: Int, val max: Int)
+interface IFilterService { fun filter(raw: String): CityTemp }
+
+
+interfaces/IFileWriter.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+interface IFileWriter { fun write(c: CityTemp) }
+
+
+services/FilterService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.*
+import org.springframework.stereotype.Service
+
+@Service
+class FilterService : IFilterService {
+    override fun filter(raw: String): CityTemp {
+        val city = Regex("location=([^,]+)").find(raw)!!.groupValues[1]
+        val min = Regex("minTemp=(-?\\d+)").find(raw)!!.groupValues[1].toInt()
+        val max = Regex("maxTemp=(-?\\d+)").find(raw)!!.groupValues[1].toInt()
+        return CityTemp(city, min, max)
+    }
+}
+
+
+services/FileWriterService.kt (NOU)
+
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.*
+import org.springframework.stereotype.Service
+import java.io.File
+
+@Service
+class FileWriterService : IFileWriter {
+    override fun write(c: CityTemp) {
+        File("${c.city}.txt").appendText("min=${c.min} max=${c.max}\n")
+    }
+}
+
+
+services/DirijorService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.*
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.stereotype.Service
+
+@Service
+class DirijorService {
+    @Autowired private lateinit var api: IWeatherAPI
+    @Autowired private lateinit var filter: IFilterService
+    @Autowired private lateinit var writer: IFileWriter
+
+    fun process(city: String) {
+        val raw = api.getForecast(city)
+        val filtered = filter.filter(raw)
+        writer.write(filtered)
+    }
+}
+
+
+3.3 Citire orase din fisier + filtru + regresie liniara
+Enunt
+Pornind de la exemplul de proiectare și implementare a unei aplicații care primește informații meteo (adică utilizând și serviciile de acolo eventual cu modificări) să se realizeze următoarele:
+un serviciu care citește dintr-un fișier (în ce format dorim) o listă de orașe;
+să se aplice modelul de proiectare de tip filtru în proiectarea și implementarea unui serviciu care extrage din fluxul de date informații pe baza numelui orașului (utilizând serviciul anterior)
+să se proiecteze și să se implementeze un serviciu care utilizând serviciul de filtrare va aplica o regresie liniara peste datele rezultate si apoi se va afisa unghiul dreptei rezultate.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului.
+Se va utiliza înlănțuirea și respectarea principiilor SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Reader[CityReaderService] --> Dir[DirijorService]
+    Dir --> API[WeatherAPIService]
+    API --> Filt[FilterService]
+    Filt --> Reg[RegressionService<br/>calcul unghi]
+    Reg --> Out[Consola]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class CityReaderService { +read(path) List~String~ }
+    class RegressionService { +angle(temps) Double }
+    class DirijorService
+    DirijorService --> CityReaderService
+    DirijorService --> RegressionService
+
+
+Fisiere noi
+services/CityReaderService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+import org.springframework.stereotype.Service
+import java.io.File
+@Service
+class CityReaderService {
+    fun read(path: String): List<String> = File(path).readLines()
+}
+
+
+services/RegressionService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import org.springframework.stereotype.Service
+import kotlin.math.atan
+import kotlin.math.PI
+
+@Service
+class RegressionService {
+    // y = ax + b, returneaza unghiul dreptei in grade
+    fun angle(temps: List<Double>): Double {
+        val n = temps.size
+        val x = (1..n).map { it.toDouble() }
+        val mx = x.average(); val my = temps.average()
+        val num = x.zip(temps).sumOf { (xi, yi) -> (xi - mx) * (yi - my) }
+        val den = x.sumOf { (it - mx) * (it - mx) }
+        val a = num / den
+        return atan(a) * 180.0 / PI
+    }
+}
+
+
+Modifica DirijorService - dupa filtrare, colecteaza temperaturile per oras si apeleaza RegressionService.angle().
+3.4 Replicare + GUI PyQt + TCP
+Enunt
+Aplicatie meteo unde fiecare serviciu e incapsulat individual; un serviciu care respecta modelul de replicare si replica WeatherAppController de N ori; un serviciu de vizualizare care comunica cu o interfata grafica PyQt; toate serviciile comunica prin TCP, fiecare in masina lui virtuala. Diagrame + SOLID + cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    GUI[PyQt GUI] -->|TCP socket| R1[Replica #1<br/>port 5000]
+    GUI --> R2[Replica #2<br/>port 5001]
+    GUI --> R3[Replica #N<br/>port 5000+N]
+    R1 --> API[WeatherAPIService]
+    R2 --> API
+    R3 --> API
+    API --> Meta[metaweather.com]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class ReplicatorService { -api +replicate(n, basePort) }
+    class IWeatherAPI { <<interface>> }
+    ReplicatorService --> IWeatherAPI
+
+
+Fisiere noi
+services/ReplicatorService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import org.springframework.stereotype.Service
+import java.net.ServerSocket
+import kotlin.concurrent.thread
+
+@Service
+class ReplicatorService(private val api: com.sd.laborator.interfaces.IWeatherAPI) {
+    fun replicate(n: Int, basePort: Int = 5000) {
+        repeat(n) { i ->
+            thread {
+                val ss = ServerSocket(basePort + i)
+                println("Replica ${i+1} pe portul ${basePort + i}")
+                while (true) {
+                    val cl = ss.accept()
+                    val city = cl.getInputStream().bufferedReader().readLine()
+                    cl.getOutputStream().write((api.getForecast(city) + "\n").toByteArray())
+                    cl.close()
+                }
+            }
+        }
+    }
+}
+
+
+weather_gui.py (NOU)
+
+
+
+Python
+import sys, socket
+from PyQt5.QtWidgets import QApplication, QWidget, QLineEdit, QPushButton, QTextEdit, QVBoxLayout
+
+class W(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.line = QLineEdit(); self.btn = QPushButton("Forecast"); self.txt = QTextEdit()
+        lay = QVBoxLayout(); lay.addWidget(self.line); lay.addWidget(self.btn); lay.addWidget(self.txt)
+        self.setLayout(lay); self.btn.clicked.connect(self.go)
+
+    def go(self):
+        s = socket.socket(); s.connect(("localhost", 5000))
+        s.sendall((self.line.text() + "\n").encode())
+        self.txt.setText(s.recv(4096).decode()); s.close()
+
+app = QApplication(sys.argv); w = W(); w.show(); sys.exit(app.exec_())
