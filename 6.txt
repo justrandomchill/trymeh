@@ -1,0 +1,495 @@
+Necesar: docker run -d -p 5672:5672 rabbitmq:3 inainte de pornire.
+Lab 6 - Microservicii Spring CRUD (BeerApp)
+6.1 Microserviciu per operatie CRUD + poarta API (cel mai des)
+Enunt
+Pornind de la exemplul 1 din laboratorul 6 să se modifice acesta astfel încât să fie câte un microserviciu separat pentru fiecare operație CRUD, iar acestea să fie accesate prin intermediul unui model de proiectare de tip poartă API în interiorul altui microserviciu.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului.
+Se va utiliza orchestrarea și respectarea principiilor SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    Client[Client / curl] --> GW[BeerApiGateway<br/>poarta API]
+    GW -->|/add| Adder[BeerAdderService]
+    GW -->|/all /name /price| Reader[BeerReaderService]
+    GW -->|/update| Updater[BeerUpdaterService]
+    GW -->|/del| Deleter[BeerDeleterService]
+    Adder --> Repo[(BeerRepository<br/>SQLite)]
+    Reader --> Repo
+    Updater --> Repo
+    Deleter --> Repo
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IBeerAdder { <<interface>> +addBeer(Beer) }
+    class IBeerReader { <<interface>> +getBeers() +getBeerByName() +getBeerByPrice() }
+    class IBeerUpdater { <<interface>> +updateBeer(Beer) }
+    class IBeerDeleter { <<interface>> +deleteBeer(String) }
+    class BeerAdderService
+    class BeerReaderService
+    class BeerUpdaterService
+    class BeerDeleterService
+    class BeerApiGateway { -adder -reader -updater -deleter }
+    class IBeerRepository { <<interface>> }
+    class BeerRepository
+    IBeerAdder <|.. BeerAdderService
+    IBeerReader <|.. BeerReaderService
+    IBeerUpdater <|.. BeerUpdaterService
+    IBeerDeleter <|.. BeerDeleterService
+    IBeerRepository <|.. BeerRepository
+    BeerAdderService --> IBeerRepository
+    BeerReaderService --> IBeerRepository
+    BeerUpdaterService --> IBeerRepository
+    BeerDeleterService --> IBeerRepository
+    BeerApiGateway --> IBeerAdder
+    BeerApiGateway --> IBeerReader
+    BeerApiGateway --> IBeerUpdater
+    BeerApiGateway --> IBeerDeleter
+
+
+Proiect baza: copiezi labsd06\SD_Laborator_06\exemplu_beerapp\BeerApp.
+Fisiere de modificat/adaugat
+src/main/kotlin/com/sd/laborator/business/interfaces/IBeerAdder.kt (NOU - segregare ISP)
+
+
+
+
+Kotlin
+package com.sd.laborator.business.interfaces
+import com.sd.laborator.models.Beer
+interface IBeerAdder { fun addBeer(beer: Beer) }
+
+
+IBeerReader.kt (NOU)
+
+
+
+
+Kotlin
+package com.sd.laborator.business.interfaces
+import com.sd.laborator.models.Beer
+interface IBeerReader {
+    fun getBeers(): String
+    fun getBeerByName(name: String): String?
+    fun getBeerByPrice(price: Float): String
+}
+
+
+IBeerUpdater.kt (NOU)
+
+
+
+
+Kotlin
+package com.sd.laborator.business.interfaces
+import com.sd.laborator.models.Beer
+interface IBeerUpdater { fun updateBeer(beer: Beer) }
+
+
+IBeerDeleter.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.business.interfaces
+interface IBeerDeleter { fun deleteBeer(name: String) }
+
+
+services/BeerAdderService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.business.services
+
+import com.sd.laborator.business.interfaces.IBeerAdder
+import com.sd.laborator.models.Beer
+import com.sd.laborator.persistence.interfaces.IBeerRepository
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.stereotype.Service
+
+@Service
+class BeerAdderService : IBeerAdder {
+    @Autowired private lateinit var repo: IBeerRepository
+    override fun addBeer(beer: Beer) { repo.add(beer) }
+}
+
+
+services/BeerReaderService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.business.services
+
+import com.sd.laborator.business.interfaces.IBeerReader
+import com.sd.laborator.persistence.interfaces.IBeerRepository
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.stereotype.Service
+
+@Service
+class BeerReaderService : IBeerReader {
+    @Autowired private lateinit var repo: IBeerRepository
+    override fun getBeers() = repo.getAll().joinToString()
+    override fun getBeerByName(name: String) = repo.getByName(name)?.toString()
+    override fun getBeerByPrice(price: Float) = repo.getByPrice(price).joinToString()
+}
+
+
+services/BeerUpdaterService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.business.services
+
+import com.sd.laborator.business.interfaces.IBeerUpdater
+import com.sd.laborator.models.Beer
+import com.sd.laborator.persistence.interfaces.IBeerRepository
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.stereotype.Service
+
+@Service
+class BeerUpdaterService : IBeerUpdater {
+    @Autowired private lateinit var repo: IBeerRepository
+    override fun updateBeer(beer: Beer) { repo.update(beer) }
+}
+
+
+services/BeerDeleterService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.business.services
+
+import com.sd.laborator.business.interfaces.IBeerDeleter
+import com.sd.laborator.persistence.interfaces.IBeerRepository
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.stereotype.Service
+
+@Service
+class BeerDeleterService : IBeerDeleter {
+    @Autowired private lateinit var repo: IBeerRepository
+    override fun deleteBeer(name: String) { repo.delete(name) }
+}
+
+
+presentation/controllers/BeerApiGateway.kt (NOU - poarta API)
+
+
+
+Kotlin
+package com.sd.laborator.presentation.controllers
+
+import com.sd.laborator.business.interfaces.*
+import com.sd.laborator.models.Beer
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.web.bind.annotation.*
+
+@RestController
+@RequestMapping("/api/beer")
+class BeerApiGateway {
+    @Autowired private lateinit var adder: IBeerAdder
+    @Autowired private lateinit var reader: IBeerReader
+    @Autowired private lateinit var updater: IBeerUpdater
+    @Autowired private lateinit var deleter: IBeerDeleter
+
+    @PostMapping("/add") fun add(@RequestBody b: Beer) = adder.addBeer(b).let { "OK" }
+    @GetMapping("/all") fun all() = reader.getBeers()
+    @GetMapping("/name/{n}") fun byName(@PathVariable n: String) = reader.getBeerByName(n)
+    @GetMapping("/price/{p}") fun byPrice(@PathVariable p: Float) = reader.getBeerByPrice(p)
+    @PutMapping("/update") fun upd(@RequestBody b: Beer) = updater.updateBeer(b).let { "OK" }
+    @DeleteMapping("/del/{n}") fun del(@PathVariable n: String) = deleter.deleteBeer(n).let { "OK" }
+}
+
+
+Sterge: BeerService.kt (vechiul service monolitic) si IBeerService.kt.
+Pasi rulare
+
+
+
+mvn spring-boot:run
+curl -X POST localhost:8080/api/beer/add -H "Content-Type: application/json" -d '{"id":0,"name":"Ursus","price":5.5}'
+curl localhost:8080/api/beer/all
+
+
+6.2 CRUD + jurnalizare JSON (Decorator pattern)
+Enunt
+Pornind de la exemplul 1 din L6, cate un microserviciu pentru fiecare operatie CRUD, fiecare folosind un microserviciu de jurnalizare (recomandat acelasi). Toate datele se scriu in acelasi fisier JSON de jurnalizare. Orchestrare + SOLID.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    Client --> GW[BeerApiGateway]
+    GW --> LA[LoggingBeerAdderService<br/>decorator @Primary]
+    GW --> LR[LoggingBeerReaderService]
+    GW --> LU[LoggingBeerUpdaterService]
+    GW --> LD[LoggingBeerDeleterService]
+    LA --> A[BeerAdderService] --> Repo[(SQLite)]
+    LR --> R[BeerReaderService] --> Repo
+    LU --> U[BeerUpdaterService] --> Repo
+    LD --> D[BeerDeleterService] --> Repo
+    LA -.scrie.-> Log[crud-logs.json]
+    LR -.scrie.-> Log
+    LU -.scrie.-> Log
+    LD -.scrie.-> Log
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IBeerAdder { <<interface>> }
+    class BeerAdderService
+    class LoggingBeerAdderService { -wrapped: IBeerAdder -logFile: String }
+    IBeerAdder <|.. BeerAdderService
+    IBeerAdder <|.. LoggingBeerAdderService
+    LoggingBeerAdderService o-- IBeerAdder : wrapeaza
+    note for LoggingBeerAdderService "Pattern: Decorator<br/>Aplica acelasi pentru<br/>Reader, Updater, Deleter"
+
+
+Fisiere noi (suplimentar fata de 6.1)
+src/main/resources/application.properties (MODIFICA - adauga)
+
+
+
+logging.crudLogs=crud-logs.json
+
+
+business/services/LoggingBeerAdderService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.business.services
+
+import com.sd.laborator.business.interfaces.IBeerAdder
+import com.sd.laborator.models.Beer
+import org.springframework.beans.factory.annotation.Value
+import java.io.File
+import java.time.LocalDateTime
+
+class LoggingBeerAdderService(
+    private val wrapped: IBeerAdder,
+    @Value("\${logging.crudLogs}") private val logFile: String
+) : IBeerAdder {
+    override fun addBeer(beer: Beer) {
+        File(logFile).appendText("""{"op":"ADD","beer":"${beer.beerName}","ts":"${LocalDateTime.now()}"}""" + "\n")
+        wrapped.addBeer(beer)
+    }
+}
+
+
+(Analog: LoggingBeerReaderService, LoggingBeerUpdaterService, LoggingBeerDeleterService - wrappeaza si scriu intr-acelasi crud-logs.json cu op READ/UPDATE/DELETE.)
+config/LoggingConfig.kt (NOU - marcheaza decoratorii ca @Primary)
+
+
+
+Kotlin
+package com.sd.laborator.config
+
+import com.sd.laborator.business.interfaces.*
+import com.sd.laborator.business.services.*
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.annotation.*
+
+@Configuration
+class LoggingConfig {
+    @Value("\${logging.crudLogs}") lateinit var logFile: String
+
+    @Bean @Primary fun adder(real: BeerAdderService): IBeerAdder = LoggingBeerAdderService(real, logFile)
+    @Bean @Primary fun reader(real: BeerReaderService): IBeerReader = LoggingBeerReaderService(real, logFile)
+    @Bean @Primary fun updater(real: BeerUpdaterService): IBeerUpdater = LoggingBeerUpdaterService(real, logFile)
+    @Bean @Primary fun deleter(real: BeerDeleterService): IBeerDeleter = LoggingBeerDeleterService(real, logFile)
+}
+
+
+6.3 Cache pe disc (exemplul 2 din L6 - LibraryApp)
+Enunt
+Pornind de la exemplul 2 din laboratorul 6, să se modifice acesta astfel încât să utilizeze un fișier pe disc pe post de memorie cache (se va utiliza numai adăugare și analiza pe bază de marcaje temporale).
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului.
+Se va utiliza orchestrarea și respectarea principiilor SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Client --> Ctrl[LibraryPrinterController]
+    Ctrl -->|verifica| FC[FileCacheService<br/>append-only]
+    FC -->|citeste/scrie| File[cache.txt<br/>ts TAB key TAB value]
+    Ctrl -->|miss| Svc[LibraryDAOService]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class FileCacheService { -file: File -ttl: Long +put(k, v) +get(k) String? }
+    class LibraryPrinterController { -cache: FileCacheService -svc: ILibraryDAOService }
+    LibraryPrinterController --> FileCacheService
+
+
+Fisiere noi
+src/main/kotlin/com/sd/laborator/business/services/FileCacheService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.business.services
+
+import org.springframework.stereotype.Service
+import java.io.File
+import java.time.Instant
+
+@Service
+class FileCacheService {
+    private val file = File("cache.txt")  // append-only
+    private val ttl = 30 * 60L  // 30 minute
+
+    fun put(key: String, value: String) {
+        file.appendText("${Instant.now().epochSecond}\t$key\t$value\n")
+    }
+
+    fun get(key: String): String? {
+        if (!file.exists()) return null
+        val now = Instant.now().epochSecond
+        return file.readLines().reversed()
+            .firstOrNull {
+                val (ts, k, _) = it.split("\t", limit = 3)
+                k == key && now - ts.toLong() < ttl
+            }?.split("\t", limit = 3)?.get(2)
+    }
+}
+
+
+Modifica LibraryPrinterController.kt - injecteaza FileCacheService si verifica/scrie in cache la fiecare GET.
+6.4 CRUD prin Kafka
+Enunt
+Sa se modifice L6 ex1 astfel incat fiecare operatie CRUD = un microserviciu; acestea trimit mesajele unui alt microserviciu (repository cu BD) prin Kafka; repository-ul raspunde tot prin Kafka catre ms-urile CRUD, iar de la ele inapoi la BeerAppCLI.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    CLI[BeerAppCLI] -->|publish| GW[BeerApiGateway]
+    GW -->|beer-add-req| K1[(Kafka topic)]
+    GW -->|beer-read-req| K2[(Kafka topic)]
+    K1 --> AL[AddListener] --> Repo[(SQLite)]
+    K2 --> RL[ReadListener] --> Repo
+    AL -->|beer-resp| KR[(Kafka resp)]
+    RL -->|beer-resp| KR
+    KR --> GW
+    GW --> CLI
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class BeerKafkaConfig { @Bean topics }
+    class AddListener { -adder -tpl @KafkaListener }
+    class ReadListener
+    class UpdateListener
+    class DeleteListener
+    class BeerApiGateway { -tpl: KafkaTemplate }
+    BeerApiGateway --> KafkaTemplate
+    AddListener --> IBeerAdder
+
+
+Fisiere noi
+pom.xml (MODIFICA - adauga dependinta Kafka)
+
+
+
+XML
+<dependency>
+  <groupId>org.springframework.kafka</groupId>
+  <artifactId>spring-kafka</artifactId>
+</dependency>
+
+
+src/main/resources/application.properties (MODIFICA)
+
+
+
+spring.kafka.bootstrap-servers=localhost:9092
+spring.kafka.consumer.group-id=beer-app
+
+
+src/main/kotlin/com/sd/laborator/kafka/BeerKafkaConfig.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.kafka
+
+import org.apache.kafka.clients.admin.NewTopic
+import org.springframework.context.annotation.*
+
+@Configuration
+class BeerKafkaConfig {
+    @Bean fun addTopic() = NewTopic("beer-add-req", 1, 1.toShort())
+    @Bean fun readTopic() = NewTopic("beer-read-req", 1, 1.toShort())
+    @Bean fun respTopic() = NewTopic("beer-resp", 1, 1.toShort())
+}
+
+
+src/main/kotlin/com/sd/laborator/kafka/AddListener.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.kafka
+
+import com.sd.laborator.business.interfaces.IBeerAdder
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.kafka.annotation.KafkaListener
+import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.stereotype.Component
+
+@Component
+class AddListener {
+    @Autowired private lateinit var adder: IBeerAdder
+    @Autowired private lateinit var tpl: KafkaTemplate<String, String>
+
+    @KafkaListener(topics = ["beer-add-req"])
+    fun onAdd(msg: String) {
+        val (n, p) = msg.split(",")
+        adder.addBeer(com.sd.laborator.models.Beer(0, n, p.toFloat()))
+        tpl.send("beer-resp", "ADDED $n")
+    }
+}
+
+
+(Analog: ReadListener, UpdateListener, DeleteListener.)
+Modifica BeerApiGateway.kt:
+
+
+
+Kotlin
+@Autowired private lateinit var tpl: KafkaTemplate<String, String>
+
+@PostMapping("/add") fun add(@RequestBody b: Beer): String {
+    tpl.send("beer-add-req", "${b.beerName},${b.beerPrice}")
+    return "Cerere trimisa"
+}
