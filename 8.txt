@@ -1,0 +1,548 @@
+Toate microserviciile existente - inainte sa proceseze un mesaj, trimit o copie spre Monitor (port 2100).
+Lab 8 - Chat / Student-Teacher (TCP, corutine, Docker)
+Aplicatie de chat cu microservicii peste TCP; varianta containerizata foloseste Docker + retea ms-net + registry local localhost:5000.
+8.1 Procesor de flux: filtrare dupa porturi
+Enunt
+Pornind de la aplicația exemplu de chat din laboratorul 8, să se modifice aceasta astfel încât să se introducă un procesor de flux care să filtreze toată comunicația după niște reguli (de exemplu: se acceptă toate care vin din gama de porturi XX-YY), iar rezultatul se salvează într-un fișier local.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Student --> Filt[PortFilterMicroservice<br/>port 1400]
+    Teacher --> Filt
+    Filt -->|ACCEPT 1000-2000| MM[MessageManager<br/>port 1500]
+    Filt -.->|DROP| Drop[X]
+    Filt -.->|log| File[results.txt]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class PortFilterMicroservice { -MIN_PORT -MAX_PORT +run() }
+
+
+Fisiere noi
+PortFilterMicroservice/src/main/kotlin/com/sd/laborator/PortFilterMicroservice.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import java.net.Socket
+import kotlin.concurrent.thread
+
+class PortFilterMicroservice {
+    companion object {
+        const val FILTER_PORT = 1400
+        const val MIN_PORT = 1000
+        const val MAX_PORT = 2000
+    }
+
+    fun run() {
+        val ss = ServerSocket(FILTER_PORT)
+        println("PortFilter pe portul $FILTER_PORT, accepta $MIN_PORT-$MAX_PORT")
+        while (true) {
+            val client = ss.accept()
+            thread {
+                val downstream = Socket("messagemanager", 1500)
+                val br = BufferedReader(InputStreamReader(client.inputStream))
+                while (true) {
+                    val line = br.readLine() ?: break
+                    if (client.port in MIN_PORT..MAX_PORT) {
+                        File("results.txt").appendText("[ACCEPT ${client.port}] $line\n")
+                        downstream.getOutputStream().write((line + "\n").toByteArray())
+                    } else {
+                        File("results.txt").appendText("[DROP ${client.port}] $line\n")
+                    }
+                }
+                client.close(); downstream.close()
+            }
+        }
+    }
+}
+fun main() = PortFilterMicroservice().run()
+
+
+PortFilterMicroservice/Dockerfile (NOU)
+
+
+
+
+FROM openjdk:11
+COPY target/PortFilter-jar-with-dependencies.jar app.jar
+EXPOSE 1400
+CMD ["java", "-jar", "app.jar"]
+
+
+docker-compose.yml:
+
+
+
+
+YAML
+version: '3'
+services:
+  messagemanager:
+    build: ./MessageManagerMicroservice
+  portfilter:
+    build: ./PortFilterMicroservice
+    ports: ["1400:1400"]
+    depends_on: [messagemanager]
+  student:
+    build: ./StudentMicroservice
+    environment:
+      MESSAGE_MANAGER_HOST: portfilter
+    depends_on: [portfilter]
+
+
+8.2 Corutine + lista utilizatori activi (comunicare punctuala)
+Enunt
+Pornind de la aplicația exemplu de chat din laboratorul 8, să se modifice aceasta prin utilizarea corutinelor și să se elimine procesorul central de mesaje. În locul lui să fie un procesor care să mențină o listă de utilizatori activi, iar apoi cei care doresc să comunice verifică dacă utilizatorul este activ, îi află adresa și portul, după care inițiază o comunicare punctuală.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    S1[Student1] -->|register/lookup| AU[ActiveUsersMicroservice<br/>port 1500]
+    S2[Student2] -->|register/lookup| AU
+    S1 <-->|P2P direct| S2
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class UserInfo { +addr: String +port: Int }
+    class ActiveUsersMicroservice { -users: Map +run() }
+    ActiveUsersMicroservice --> UserInfo
+
+
+Fisiere noi
+ActiveUsersMicroservice/src/main/kotlin/com/sd/laborator/ActiveUsersMicroservice.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import kotlinx.coroutines.*
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
+
+data class UserInfo(val addr: String, val port: Int)
+
+class ActiveUsersMicroservice {
+    private val users = mutableMapOf<String, UserInfo>()
+    private val socket = ServerSocket(1500)
+
+    fun run() = runBlocking {
+        println("ActiveUsers pe 1500")
+        while (true) {
+            val c = socket.accept()
+            launch(Dispatchers.IO) {
+                val br = BufferedReader(InputStreamReader(c.inputStream))
+                while (true) {
+                    val line = br.readLine() ?: break
+                    val parts = line.split(" ")
+                    when (parts[0]) {
+                        "register" -> {
+                            synchronized(users) { users[parts[1]] = UserInfo(c.inetAddress.hostAddress, parts[2].toInt()) }
+                            c.getOutputStream().write("OK\n".toByteArray())
+                        }
+                        "lookup" -> {
+                            val u = users[parts[1]]
+                            c.getOutputStream().write(((u?.let { "${it.addr}:${it.port}" } ?: "NULL") + "\n").toByteArray())
+                        }
+                        "unregister" -> { synchronized(users) { users.remove(parts[1]) } }
+                    }
+                }
+            }
+        }
+    }
+}
+fun main() = ActiveUsersMicroservice().run()
+
+
+Modifica StudentMicroservice.kt - foloseste corutine, se inregistreaza la ActiveUsers, porneste server local P2P.
+
+8.3 Corutine + transfer de fisier
+Enunt
+Pornind de la aplicația exemplu de chat din laboratorul 8, să se modifice aceasta prin utilizarea corutinelor și introducerea unui procesor de flux care permite încărcarea și trimiterea către un alt utilizator al unui fișier.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    S1[Student1] -->|SEND filename size + bytes| FT[FileTransferMicroservice<br/>port 1700]
+    FT --> File[received_X.bin]
+    FT -->|notifica| S2[Student2]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class FileTransferMicroservice { +run() }
+
+
+Fisiere noi
+FileTransferMicroservice/src/main/kotlin/com/sd/laborator/FileTransferMicroservice.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import kotlinx.coroutines.*
+import java.io.File
+import java.net.ServerSocket
+
+class FileTransferMicroservice {
+    fun run() = runBlocking {
+        val ss = ServerSocket(1700)
+        println("FileTransfer pe 1700")
+        while (true) {
+            val c = ss.accept()
+            launch(Dispatchers.IO) {
+                val dis = java.io.DataInputStream(c.inputStream)
+                val cmd = dis.readUTF()  // "SEND <filename> <size>"
+                if (cmd.startsWith("SEND")) {
+                    val (_, fname, sizeStr) = cmd.split(" ")
+                    val size = sizeStr.toInt()
+                    val buf = ByteArray(size)
+                    dis.readFully(buf)
+                    File("received_$fname").writeBytes(buf)
+                    println("Primit fisier: $fname ($size bytes)")
+                }
+            }
+        }
+    }
+}
+fun main() = FileTransferMicroservice().run()
+
+
+8.4 Corutine + multicast (subgrupuri)
+Enunt
+Pornind de la aplicația exemplu de chat din laboratorul 8, să se modifice aceasta prin utilizarea corutinelor și introducerea unui procesor de flux care implementează multicast-ul (unul la mai mulți - trebuie să existe posibilitatea creării unui subgrup de studenți).
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    S1[Student1] -->|join grupA| MC[MulticastMicroservice<br/>port 1800]
+    S2[Student2] -->|join grupA| MC
+    S3[Student3] -->|join grupB| MC
+    Tch[Teacher] -->|send grupA text| MC
+    MC --> S1
+    MC --> S2
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class MulticastMicroservice { -groups: Map +run() }
+
+
+Fisiere noi
+MulticastMicroservice/src/main/kotlin/com/sd/laborator/MulticastMicroservice.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import kotlinx.coroutines.*
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import java.net.Socket
+
+class MulticastMicroservice {
+    private val groups = mutableMapOf<String, MutableList<Socket>>()
+    fun run() = runBlocking {
+        val ss = ServerSocket(1800)
+        while (true) {
+            val c = ss.accept()
+            launch(Dispatchers.IO) {
+                val br = BufferedReader(InputStreamReader(c.inputStream))
+                while (true) {
+                    val line = br.readLine() ?: break
+                    val parts = line.split(" ", limit = 3)
+                    when (parts[0]) {
+                        "join" -> synchronized(groups) {
+                            groups.getOrPut(parts[1]) { mutableListOf() }.add(c)
+                        }
+                        "send" -> {
+                            groups[parts[1]]?.forEach { peer ->
+                                peer.getOutputStream().write(("[${parts[1]}] ${parts[2]}\n").toByteArray())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+fun main() = MulticastMicroservice().run()
+
+
+8.5 Corutine + cenzura cuvinte din dictionar
+Enunt
+Pornind de la aplicația exemplu de chat din laboratorul 8, să se modifice aceasta prin utilizarea corutinelor și introducerea unui procesor de flux care monitorizează comunicația și înlocuiește automat orice cuvânt aflat într-un dicționar (încărcat dintr-un fișier txt) cu xxx (numărul de x este dat de numărul de caractere al cuvântului).
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Student --> Cen[CensorMicroservice<br/>port 1900]
+    Cen -->|cuvinte cenzurate| MM[MessageManager<br/>port 1500]
+    Dict[dictionary.txt] --> Cen
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class CensorMicroservice { -dict: Set +censor(String) String +run() }
+
+
+Fisiere noi
+dictionary.txt (NOU)
+
+
+
+parola
+secret
+interzis
+
+
+CensorMicroservice/src/main/kotlin/com/sd/laborator/CensorMicroservice.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import kotlinx.coroutines.*
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import java.net.Socket
+
+class CensorMicroservice {
+    private val dict = File("dictionary.txt").readLines().toSet()
+
+    private fun censor(msg: String): String {
+        var out = msg
+        for (w in dict) out = out.replace(w, "x".repeat(w.length), ignoreCase = true)
+        return out
+    }
+
+    fun run() = runBlocking {
+        val ss = ServerSocket(1900)
+        while (true) {
+            val client = ss.accept()
+            launch(Dispatchers.IO) {
+                val down = Socket("localhost", 1500)
+                val br = BufferedReader(InputStreamReader(client.inputStream))
+                while (true) {
+                    val line = br.readLine() ?: break
+                    down.getOutputStream().write((censor(line) + "\n").toByteArray())
+                }
+            }
+        }
+    }
+}
+fun main() = CensorMicroservice().run()
+
+
+8.6 Procesor de flux: mecanism de registru (Observator)
+Enunt
+Pornind de la aplicația exemplu de chat din laboratorul 8, să se modifice aceasta prin introducerea unui procesor de flux care implementează un mecanism de tip registru (unde orice procesor de flux la pornire se va înregistra și apoi la distrugere se va șterge). Se poate utiliza un model de proiectare de tip observator.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    P1[Procesor1] -->|register/unregister| Reg[RegistryMicroservice<br/>port 1500]
+    P2[Procesor2] -->|register/unregister| Reg
+    Reg -->|notify| Obs1[Observer1]
+    Reg -->|notify| Obs2[Observer2]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IObserver { <<interface>> +onRegistered(String) +onUnregistered(String) }
+    class IRegistry { <<interface>> +register(name, addr) +unregister(name) +subscribe(IObserver) }
+    class RegistryMicroservice { -services: Map -observers: List }
+    IRegistry <|.. RegistryMicroservice
+    RegistryMicroservice --> IObserver
+
+
+Fisiere noi
+interfaces/IObserver.kt + IRegistry.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+interface IObserver { fun onRegistered(name: String); fun onUnregistered(name: String) }
+interface IRegistry {
+    fun register(name: String, addr: String)
+    fun unregister(name: String)
+    fun subscribe(o: IObserver)
+}
+
+
+RegistryMicroservice/src/main/kotlin/com/sd/laborator/RegistryMicroservice.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import com.sd.laborator.interfaces.*
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import kotlin.concurrent.thread
+
+class RegistryMicroservice : IRegistry {
+    private val services = mutableMapOf<String, String>()
+    private val observers = mutableListOf<IObserver>()
+
+    override fun register(n: String, a: String) {
+        synchronized(services) { services[n] = a }
+        observers.forEach { it.onRegistered(n) }
+    }
+    override fun unregister(n: String) {
+        synchronized(services) { services.remove(n) }
+        observers.forEach { it.onUnregistered(n) }
+    }
+    override fun subscribe(o: IObserver) { observers.add(o) }
+
+    fun run() {
+        val ss = ServerSocket(1500)
+        while (true) {
+            val c = ss.accept()
+            thread {
+                val br = BufferedReader(InputStreamReader(c.inputStream))
+                while (true) {
+                    val line = br.readLine() ?: break
+                    val parts = line.split(" ")
+                    when (parts[0]) {
+                        "register" -> register(parts[1], "${c.inetAddress.hostAddress}:${parts[2]}")
+                        "unregister" -> unregister(parts[1])
+                        "list" -> c.getOutputStream().write((services.toString() + "\n").toByteArray())
+                    }
+                }
+                services.keys.filter { services[it]?.startsWith(c.inetAddress.hostAddress) == true }
+                    .forEach { unregister(it) }
+            }
+        }
+    }
+}
+fun main() = RegistryMicroservice().run()
+
+
+8.7 Student-Teacher Docker + filtrare port + adaugare in BD
+Enunt
+Pornind de la Lab 8 (cu Docker), exemplul Student-Teacher: procesor de flux care face filtrarea (ex. dupa nr. portului) + un microserviciu de adaugare in baza de date a informatiilor filtrate. Diagrame + SOLID + cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Student --> Filt[PortFilterMicroservice]
+    Filt -->|ACCEPT| MM[MessageManager]
+    Filt -->|ACCEPT| DB[DbWriterMicroservice<br/>port 2200]
+    DB --> SQL[(SQLite<br/>messages.db)]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class PortFilterMicroservice
+    class DbWriterMicroservice { -db -socket +run() }
+
+
+Fisiere noi
+DbWriterMicroservice/src/main/kotlin/com/sd/laborator/DbWriterMicroservice.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import java.sql.DriverManager
+import kotlin.concurrent.thread
+
+class DbWriterMicroservice {
+    private val db = DriverManager.getConnection("jdbc:sqlite:messages.db")
+    init {
+        db.createStatement().execute("CREATE TABLE IF NOT EXISTS msgs(id INTEGER PRIMARY KEY, port INT, body TEXT)")
+    }
+    fun run() {
+        val ss = ServerSocket(2200)
+        while (true) {
+            val c = ss.accept()
+            thread {
+                val br = BufferedReader(InputStreamReader(c.inputStream))
+                while (true) {
+                    val line = br.readLine() ?: break
+                    val ps = db.prepareStatement("INSERT INTO msgs(port,body) VALUES(?,?)")
+                    ps.setInt(1, c.port); ps.setString(2, line); ps.execute()
+                }
+            }
+        }
+    }
+}
+fun main() = DbWriterMicroservice().run()
+
