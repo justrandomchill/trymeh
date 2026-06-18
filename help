@@ -1,0 +1,93 @@
+
+**Lab 5 - Spring REST**
+
+* **5.1 Cache 30 minute (agenda REST)**: `src/main/kotlin/com/sd/laborator/pojo/Person.kt`, `src/main/kotlin/com/sd/laborator/interfaces/IAgendaService.kt`, `src/main/kotlin/com/sd/laborator/interfaces/ICacheService.kt`, `src/main/kotlin/com/sd/laborator/services/AgendaService.kt`, `src/main/kotlin/com/sd/laborator/services/CacheService.kt`, `src/main/kotlin/com/sd/laborator/controllers/AgendaController.kt`, `AgendaApp.kt` (redenumit din `LibraryApp.kt`). Proiect de bază: `labsd05\SD_Laborator_05\exemplul_2\LibraryApp`.
+* **5.2 Cache 30 min + replicare cu cache global**: `src/main/kotlin/com/sd/laborator/pojo/Expense.kt`, `src/main/kotlin/com/sd/laborator/interfaces/IExpenseService.kt`, `src/main/kotlin/com/sd/laborator/services/ExpenseService.kt`, `src/main/kotlin/com/sd/laborator/services/GlobalCacheService.kt`, `src/main/kotlin/com/sd/laborator/config/ReplicationConfig.kt`, `src/main/kotlin/com/sd/laborator/controllers/ExpenseController.kt`.
+* **5.3 Producători multipli / Consumatori multipli**: `src/main/kotlin/com/sd/laborator/interfaces/IChelner.kt`, `src/main/kotlin/com/sd/laborator/interfaces/IBucatar.kt`, `src/main/kotlin/com/sd/laborator/services/Chelner.kt`, `src/main/kotlin/com/sd/laborator/services/Bucatar.kt`, `src/main/kotlin/com/sd/laborator/config/AppConfig.kt`. Proiect de bază: `labsd05\SD_Laborator_05\exemplul_1\StackApp`.
+
+**Lab 6 - Microservicii Spring CRUD**
+
+* **6.1 Microserviciu per operație CRUD + poartă API**: `src/main/kotlin/com/sd/laborator/business/interfaces/IBeerAdder.kt`, `IBeerReader.kt`, `IBeerUpdater.kt`, `IBeerDeleter.kt`, `services/BeerAdderService.kt`, `services/BeerReaderService.kt`, `services/BeerUpdaterService.kt`, `services/BeerDeleterService.kt`, `presentation/controllers/BeerApiGateway.kt`. Proiect de bază: `labsd06\SD_Laborator_06\exemplu_beerapp\BeerApp`.
+* **6.2 CRUD + jurnalizare JSON**: `src/main/resources/application.properties`, `business/services/LoggingBeerAdderService.kt` (plus variantele Reader, Updater, Deleter), `config/LoggingConfig.kt`.
+* **6.3 Cache pe disc**: `src/main/kotlin/com/sd/laborator/business/services/FileCacheService.kt`, `LibraryPrinterController.kt` (modificat).
+* **6.4 CRUD prin Kafka**: `pom.xml`, `src/main/resources/application.properties`, `src/main/kotlin/com/sd/laborator/kafka/BeerKafkaConfig.kt`, `src/main/kotlin/com/sd/laborator/kafka/AddListener.kt` (plus Read, Update, Delete), `BeerApiGateway.kt` (modificat).
+
+**Lab 3 - WeatherApp**
+
+* **3.1 Model API + încapsulare + înlănțuire**: `src/main/kotlin/com/sd/laborator/interfaces/IWeatherAPI.kt`, `src/main/kotlin/com/sd/laborator/services/WeatherAPIService.kt`, `WeatherAppController.kt` (modificat). Proiect de bază: `labsd03\SD_Laborator_03\WeatherApp`.
+* **3.2 Scriere fișier + filtru + dirijor**: `interfaces/IFilterService.kt`, `interfaces/IFileWriter.kt`, `services/FilterService.kt`, `services/FileWriterService.kt`, `services/DirijorService.kt`.
+* **3.3 Citire orașe + filtru + regresie liniară**: `services/CityReaderService.kt`, `services/RegressionService.kt`, `DirijorService.kt` (modificat).
+* **3.4 Replicare + GUI PyQt + TCP**: `services/ReplicatorService.kt`, `weather_gui.py`.
+
+**Lab 7 - Okazii**
+
+* **7.1 Evaluări 1-5**: `RatingProcessorMicroservice/src/RatingProcessorMicroservice.kt`, `BidderMicroservice.kt` (modificat).
+* **7.2 Statistici număr mesaje**: `NumberOfMessagesMicroservice/src/NumberOfMessagesMicroservice.kt`, `AuctioneerMicroservice.kt` (modificat).
+* **7.3 Discuție privată**: `ChatMasterMicroservice/src/ChatMasterMicroservice.kt`, `ChatClientMicroservice/src/ChatClientMicroservice.kt`.
+* **7.4 Monitorizare + cozi + SQLite**: `MonitorMicroservice/src/MonitorMicroservice.kt`.
+
+**Lab 8 - Chat / Student-Teacher**
+
+* **8.1 Procesor de flux (filtrare porturi)**: `PortFilterMicroservice/src/main/kotlin/com/sd/laborator/PortFilterMicroservice.kt`, `PortFilterMicroservice/Dockerfile`, `docker-compose.yml`.
+* **8.2 Corutine + listă activi (P2P)**: `ActiveUsersMicroservice/src/main/kotlin/com/sd/laborator/ActiveUsersMicroservice.kt`, `StudentMicroservice.kt` (modificat).
+* **8.3 Corutine + transfer fișier**: `FileTransferMicroservice/src/main/kotlin/com/sd/laborator/FileTransferMicroservice.kt`.
+* **8.4 Corutine + multicast**: `MulticastMicroservice/src/main/kotlin/com/sd/laborator/MulticastMicroservice.kt`.
+* **8.5 Corutine + cenzură**: `dictionary.txt`, `CensorMicroservice/src/main/kotlin/com/sd/laborator/CensorMicroservice.kt`.
+* **8.6 Mecanism registru (Observator)**: `interfaces/IObserver.kt`, `IRegistry.kt`, `RegistryMicroservice/src/main/kotlin/com/sd/laborator/RegistryMicroservice.kt`.
+* **8.7 Filtrare + DB (Docker)**: `DbWriterMicroservice/src/main/kotlin/com/sd/laborator/DbWriterMicroservice.kt`, `PortFilterMicroservice.kt` (modificat).
+
+**Lab 10 - Microservicii Python + RabbitMQ**
+
+* **10.1 Statistici erori**: `Okazii_v2/ErrorProcessor.py`.
+* **10.2 Monitorizare operații**: `Okazii_v2/LoggerProcessor.py`.
+* **10.3 Discuție privată**: `Okazii_v2/ChatMaster.py`, `Okazii_v2/ChatClient.py`.
+* **10.4 Evaluări 1-5**: `Okazii_v2/RatingProcessor.py`, `Bidder.py` (modificat).
+* **10.5 Statistici nr. mesaje**: `Okazii_v2/MessageCounter.py`.
+
+**Lab 11 - Micronaut funcții serverless**
+
+* **11.1 bn = suma(ai*ai)**: `src/main/kotlin/com/sd/laborator/SumOfSquaresService.kt`, `SumRequest.kt` (modificat), `SumResponse.kt` (modificat), `SumFunction.kt` (modificat), `MainRunner.kt`.
+* **11.2 Intersecție A ∩ B**: `IntersectionService.kt` (clasele Request/Response modificate similar).
+* **11.3 Reuniune A ∪ B**: `UnionService.kt`.
+* **11.4 Perechi a*b = a + b*3**: `PairFinderService.kt`, `MainRunner.kt`.
+* **11.5 Automat (state machine)**: `AutomatService.kt`, `AutomatFunction.kt`, `AutomatController.kt`, `RabbitListener.kt`.
+
+**Lab 12 - Map-Reduce**
+
+* **12.1 Index invers texte**: `mapper.py`, `reducer.py`.
+* **12.2 Index invers URL-uri**: `mapper.py`, `reducer.py`, `requirements.txt`.
+
+**Lab 13 & 14 - TCP + Apache Spark**
+
+* **13.1 Server Python -> Spark Kotlin**: `server.py`, `SparkClient.kt`.
+* **13.2 Profil companie**: `server.py`, `SparkClient.kt`.
+* **14.1 Server Kotlin -> PySpark**: `Server.kt`, `spark_client.py`.
+* **14.2 Prețuri țintă**: `Server.kt`, `spark_client.py`.
+* **14.3 Kotlin -> Spark (sentimente)**: `positive.txt`, `negative.txt`, `Server.kt`, `SentimentClient.kt`.
+* **14.4 Python -> Spark (sentimente)**: `server.py`, `spark_client.py`, `positive.txt`, `negative.txt`.
+* **14.5 Microserviciu WEB vizualizare**: `WebApp/src/main/kotlin/com/sd/laborator/SentimentController.kt`, `SentimentClient.kt` (modificat).
+
+---
+
+**Fișiere din Subiecte_CSharp.md**
+
+* **1. Calculator simplu**: `Form1.cs`
+* **2. Calculator formă poloneză**: `Form1.cs`
+* **3. TCP Sincron**: `SocketServerSync.cs`, `SocketClientSync.cs`
+* **4. TCP Asincron**: `SocketServerAsync.cs`, `SocketClientAsync.cs`
+* **5. MSMQ**: `Student.cs`, `Form1.cs` (Sender), `Form1.cs` (Receiver)
+* **6. Web Service ASMX**: `NotareStudenti.asmx.cs`, `Program.cs` (Client Console)
+* **7. .NET Remoting SAO**: `StudentService.cs` (Library), `SAOServer.cs`, `SAOClient.cs`
+* **8. .NET Remoting CAO**: `StudentService.cs` (Library), `SAOServer.cs`, `SAOClient.cs`
+* **9. Web Service Employees**: `Service1.asmx.cs`, `Program.cs` (Client Console)
+* **10. Sumă vector Threads (Runde)**: `Program.cs`
+* **11. Sumă 0..n (4 thread-uri)**: `Program.cs`
+* **12. Vector: înmulțire + sort + XY**: `Program.cs`
+* **13. MergeSort recursiv Threads**: `Program.cs`
+* **14. Citire fișiere (Thread + lock)**: `Program.cs`
+* **15. Citire fișiere Asincron (Delegat)**: `Program.cs`
+* **16. Ceas kernel32.dll**: `Form1.cs`
+* **17. TreeView -> XML**: `Form1.cs`
+* **18. Structură directoare -> XML**: `Form1.cs`
+* **19. Suport limbă (.resx)**: `Form1.cs`, `lang_en.resx`, `lang_ru.resx`, `lang_gr.resx`
+* **20. App.config -> XML**: `Form1.cs`, `App.config`
