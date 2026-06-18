@@ -1,0 +1,66 @@
+1. Strategia de Examinare (Diagrame & SOLID)
+
+    Diagrama de servicii: Reprezintă mereu cutii (microservicii) conectate prin săgeți (TCP, REST, Kafka, RabbitMQ). Subliniază clar că "fiecare microserviciu rulează în mașina lui virtuală/container".  
+
+    Diagrama de clase: Pentru fiecare microserviciu, desenează clasele principale cu metode publice și dependențe (interfață <-implementează- clasă).  
+
+    Argumentarea SOLID (întrebări teoretice):
+
+        SRP (Single Responsibility): O clasă = o singură responsabilitate (ex: filtru, cache, logger).  
+
+        OCP (Open/Closed): Poți adăuga un Logger fără să modifici BeerAdderService (prin modelul Decorator).  
+
+        LSP (Liskov Substitution): Orice IBeerAdder poate fi înlocuit cu LoggingBeerAdderService fără erori.  
+
+        ISP (Interface Segregation): Am spart IBeerService în 4 interfețe mici (Adder, Reader, Updater, Deleter).  
+
+        DIP (Dependency Inversion): Controller-ul depinde de interfața IBeerAdder, nu de implementarea concretă.
+
+
+2. Comenzi de rulare pe laboratoare
+
+    Lab 3 (WeatherApp - Spring):
+
+        mvn spring-boot:run
+
+    Lab 5 (Spring REST Agenda/Expense):
+
+        mvn spring-boot:run
+
+        Test: curl -X POST localhost:8080/agenda/add ... sau curl localhost:8080/agenda/get/Ana
+
+    Lab 6 (BeerApp - CRUD/Kafka):
+
+        mvn spring-boot:run
+
+        Kafka: docker run -p 9092:9092 -p 2181:2181 spotify/kafka (înainte de rulare)
+
+    Lab 7 (Okazii - Kotlin):
+
+        Ordine: Pornești MessageProcessor și BiddingProcessor -> Auctioneer -> Bidder (toate prin java -jar nume_fisier.jar)
+
+    Lab 8 (Docker/Chat):
+
+        docker-compose up --build
+
+    Lab 10 (Python + RabbitMQ):
+
+        python3 numele_scriptului.py (Rulează în terminale separate: Brokerul RabbitMQ trebuie să fie activ)
+
+    Lab 11 (Micronaut Serverless):
+
+        mvn package
+
+        echo '{"a":[1,2,3,4,5],"n":3}' | java -jar target/nume_aplicatie-0.1.jar
+
+    Lab 12 (Map-Reduce):
+
+        python3 mapper.py | sort | python3 reducer.py > result.txt
+
+    Lab 13-14 (Spark Streaming):
+
+        Server: python3 server.py (sau java -jar ... pentru Kotlin)
+
+        Spark: spark-submit --packages org.apache.spark:spark-streaming-kafka-0-10_2.12:3.x.x spark_client.py (sau java -jar ... pentru Kotlin)
+
+Aceste comenzi sunt "rețetele" tale. Salvează-le într-un fișier COMENZI.md în repo-ul tău pentru acces rapid.
