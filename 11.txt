@@ -1,0 +1,315 @@
+Lab 11 - Micronaut functii serverless (Eratostene)
+Pornind de la exemplul cu ciurul lui Eratostene. Functia = @FunctionBean, implementeaza Supplier, extinde FunctionInitializer; logica intr-un Service injectat.
+11.1 bn = suma(ai*ai)
+Enunt
+Pornind de la aplicația exemplu pentru ciurul lui Eratostene din laboratorul 11, să se modifice aceasta astfel încât să se calculeze bn=suma(ai*ai), i=1..n. Apoi utilizând această funcție în programul principal să se calculeze pornind de la 100 de valori inițializate aleator într-un ADT A și apoi să se depună într-un ADT B rezultatele pentru n=1..100.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Main[MainRunner] -->|n=1..100| Fn[SumFunction<br/>FaaS]
+    Fn --> Svc[SumOfSquaresService]
+    Main -.->|populeaza| A[(ADT A)]
+    Main -.->|populeaza| B[(ADT B)]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class SumRequest { +a: List +n: Int }
+    class SumResponse { +bn: Long +message: String }
+    class SumOfSquaresService { +compute(a, n) Long }
+    class SumFunction { -svc +apply(req) SumResponse }
+    SumFunction --> SumOfSquaresService
+    SumFunction --> SumRequest
+    SumFunction --> SumResponse
+
+
+Fisiere noi/modificate
+src/main/kotlin/com/sd/laborator/SumOfSquaresService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+import jakarta.inject.Singleton
+
+@Singleton
+class SumOfSquaresService {
+    fun compute(a: List<Int>, n: Int): Long = a.take(n).sumOf { (it.toLong() * it.toLong()) }
+}
+
+
+EratosteneRequest.kt -> SumRequest.kt (MODIFICA)
+
+
+
+Kotlin
+package com.sd.laborator
+import io.micronaut.core.annotation.Introspected
+
+@Introspected
+class SumRequest {
+    var a: List<Int> = emptyList()
+    var n: Int = 0
+}
+
+
+EratosteneResponse.kt -> SumResponse.kt (MODIFICA)
+
+
+
+Kotlin
+@Introspected
+class SumResponse { var bn: Long = 0; var message: String = "" }
+
+
+EratosteneFunction.kt -> SumFunction.kt (MODIFICA)
+
+
+
+Kotlin
+@FunctionBean("sumOfSquares")
+class SumFunction : FunctionInitializer(), Function<SumRequest, SumResponse> {
+    @Inject private lateinit var svc: SumOfSquaresService
+
+    override fun apply(req: SumRequest): SumResponse {
+        val r = SumResponse(); r.bn = svc.compute(req.a, req.n); r.message = "OK"; return r
+    }
+}
+
+
+MainRunner.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+fun main() {
+    val a = (1..100).map { (1..100).random() }
+    val b = mutableListOf<Long>()
+    val svc = SumOfSquaresService()
+    for (n in 1..100) b.add(svc.compute(a, n))
+    println("B = $b")
+}
+
+
+Pasi
+
+
+
+mvn package
+echo '{"a":[1,2,3,4,5],"n":3}' | java -jar target/eratostene-0.1.jar
+
+
+11.2 Intersectie A ∩ B
+Enunt
+Pornind de la aplicația exemplu pentru ciurul lui Eratostene din laboratorul 11, să se modifice aceasta astfel încât să se calculeze intersecția între A și B, unde A și B sunt două ADT-uri ce conțin fiecare câte 100 de valori inițializate aleator, apoi să se depună într-un ADT C rezultatele.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Main --> A[(A)]
+    Main --> B[(B)]
+    Main --> Fn[IntersectionFunction]
+    Fn --> Svc[IntersectionService]
+    Fn --> C[(C)]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IntersectionService { +intersect(a, b) List }
+    class IntersectionFunction { -svc }
+    IntersectionFunction --> IntersectionService
+
+
+Fisiere noi
+IntersectionService.kt (NOU)
+
+
+
+Kotlin
+@Singleton
+class IntersectionService {
+    fun intersect(a: List<Int>, b: List<Int>): List<Int> = a.toSet().intersect(b.toSet()).toList()
+}
+
+
+Restul (Request/Response/Function) analog cu 11.1.
+11.3 Reuniune A ∪ B
+Enunt
+Pornind de la aplicația exemplu pentru ciurul lui Eratostene din laboratorul 11, să se modifice aceasta astfel încât să se calculeze reuniunea între A și B, unde A și B sunt două ADT-uri ce conțin fiecare câte 100 de valori inițializate aleator, apoi să se depună într-un ADT C rezultatele.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Main --> A[(A)]
+    Main --> B[(B)]
+    Main --> Fn[UnionFunction]
+    Fn --> Svc[UnionService]
+    Fn --> C[(C)]
+
+
+Fisiere noi
+UnionService.kt (NOU)
+
+
+
+Kotlin
+@Singleton
+class UnionService {
+    fun union(a: List<Int>, b: List<Int>): List<Int> = (a.toSet() + b.toSet()).toList()
+}
+
+
+11.4 Perechi ab = a + b3
+Enunt
+Sa se gaseasca (daca exista) perechile de numere care satisfac a * b = a + b * 3 (verificarea facuta in functie), unde a ∈ A, b ∈ B, A si B fiind doua ADT-uri cu cate 100 valori aleatoare (restul in programul principal).
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Main --> A[(A)]
+    Main --> B[(B)]
+    Main -->|fiecare pereche x,y| Fn[PairFinderFunction]
+    Fn --> Svc[PairFinderService]
+    Main --> Out[Console pairs]
+
+
+Fisiere noi
+PairFinderService.kt (NOU)
+
+
+
+Kotlin
+@Singleton
+class PairFinderService {
+    fun check(a: Int, b: Int): Boolean = (a * b) == (a + b * 3)
+}
+
+
+MainRunner.kt:
+
+
+
+Kotlin
+val a = (1..100).map { (1..100).random() }
+val b = (1..100).map { (1..100).random() }
+val svc = PairFinderService()
+val pairs = mutableListOf<Pair<Int,Int>>()
+for (x in a) for (y in b) if (svc.check(x, y)) pairs.add(x to y)
+println("Perechi: $pairs")
+
+
+11.5 Automat (state machine) cu functii serverless + cozi
+Enunt
+Cu functii serverless, sa se implementeze un automat (state machine, ex. 5 stari). Fiecare stare = o functie serverless care citeste dintr-o coada verificata de toate; un serviciu REST preia datele de la utilizator si le pune in coada. Variante: Subiect 1 = cozi RabbitMQ, Subiect 2 = TCP.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    User -->|POST input| Ctrl[AutomatController<br/>REST]
+    Ctrl --> Q[(coada automat-in)]
+    Q --> RL[RabbitListener]
+    RL --> Fn[AutomatFunction]
+    Fn --> Svc[AutomatService<br/>5 stari]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class AutomatService { -transitions: Map +step(Int) String }
+    class AutomatFunction { -svc +apply(req) Map }
+    class AutomatController { -fn +receive() }
+    class RabbitListener { -fn +start() }
+    AutomatFunction --> AutomatService
+    AutomatController --> AutomatFunction
+    RabbitListener --> AutomatFunction
+
+
+Fisiere noi
+AutomatService.kt (NOU)
+
+
+
+Kotlin
+@Singleton
+class AutomatService {
+    // 5 stari: S0 -> S1 -> S2 -> S3 -> S4 (final)
+    val transitions = mapOf(
+        "S0" to mapOf(0 to "S1", 1 to "S2"),
+        "S1" to mapOf(0 to "S3", 1 to "S0"),
+        "S2" to mapOf(0 to "S0", 1 to "S4"),
+        "S3" to mapOf(0 to "S4", 1 to "S2"),
+        "S4" to mapOf(0 to "S4", 1 to "S4")
+    )
+    var current = "S0"
+    fun step(input: Int): String { current = transitions[current]?.get(input) ?: current; return current }
+}
+
+
+AutomatFunction.kt (NOU)
+
+
+
+Kotlin
+@FunctionBean("automat")
+class AutomatFunction : FunctionInitializer(), Function<Map<String,Any>, Map<String,String>> {
+    @Inject private lateinit var svc: AutomatService
+    override fun apply(req: Map<String,Any>): Map<String,String> {
+        val s = svc.step((req["input"] as Number).toInt())
+        return mapOf("state" to s)
+    }
+}
+
+
+AutomatController.kt (NOU)
+
+
+
+Kotlin
+@Controller("/")
+class AutomatController {
+    @Inject private lateinit var fn: AutomatFunction
+    @Post fun receive(@Body req: Map<String,Any>) = fn.apply(req)
+}
+
+
+RabbitListener.kt (NOU)
+
+
+
+Kotlin
+@Singleton
+class RabbitListener(private val fn: AutomatFunction) {
+    @PostConstruct fun start() {
+        val conn = ConnectionFactory().apply { host = "localhost" }.newConnection()
+        val ch = conn.createChannel(); ch.queueDeclare("automat-in", true, false, false, null)
+        ch.basicConsume("automat-in", true, { _, d ->
+            val input = String(d.body).toInt()
+            println("Stare: ${fn.apply(mapOf("input" to input))}")
+        }, { _ -> })
+    }
+}
