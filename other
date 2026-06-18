@@ -1,0 +1,1945 @@
+---
+
+## Probleme C#
+
+# Subiecte SD - rezolvari C# / .NET / WinForms
+
+> Acest document acopera **20 subiecte** din folderul `C:\Users\Ana\Desktop\Subiecte SD`.
+> Tehnologii: **C# / .NET Framework**, WinForms, Threads, MSMQ, Web Services (ASMX), .NET Remoting, kernel32.dll, XML.
+> Pentru fiecare subiect: **enunt scurt** + **diagrama Mermaid** + **cod complet** gata de copiat.
+
+## Cuprins
+
+1. [Calculator simplu (WinForms)](#1-calculator-simplu)
+2. [Calculator forma poloneza (Shunting-yard)](#2-calculator-forma-poloneza)
+3. [Client-Server TCP sincron Send/Receive](#3-client-server-tcp-sincron)
+4. [Client-Server TCP asincron BeginReceive](#4-client-server-tcp-asincron)
+5. [MSMQ - cozi de mesaje](#5-msmq---cozi-de-mesaje)
+6. [Web Service ASMX - Notare Studenti](#6-web-service-asmx-notare-studenti)
+7. [.NET Remoting SAO Singleton](#7-net-remoting-sao-singleton)
+8. [.NET Remoting CAO](#8-net-remoting-cao)
+9. [Web Service - Employees / Manager](#9-web-service-employees)
+10. [Suma vector cu Threads (recursiv)](#10-suma-vector-cu-threads)
+11. [Suma 0..n cu 4 threaduri](#11-suma-0n-cu-4-threaduri)
+12. [Vector: inmultire + sort + XY (Threads)](#12-vector-inmultire--sort--xy)
+13. [MergeSort recursiv cu Threads](#13-mergesort-recursiv-cu-threads)
+14. [Citire fisiere text -> unul singur (Threads + lock)](#14-citire-fisiere--unul-singur)
+15. [Citire fisiere text Asincron (delegati)](#15-citire-fisiere-asincron)
+16. [Ceas kernel32.dll GetSystemTime](#16-ceas-kernel32dll)
+17. [TreeView -> XML](#17-treeview---xml)
+18. [Structura directoare -> XML](#18-structura-directoare---xml)
+19. [Suport limba la 2-3 secunde](#19-suport-limba)
+20. [App.config -> suma -> XML](#20-appconfig---xml)
+
+---
+
+## 1. Calculator simplu
+
+### Enunt
+Aplicatie WinForms - calculator simplu cu operatorii `+ - * / ^` si `log`. Butoane pentru cifre, virgula, operatori, egal si stergere.
+
+### Diagrama
+```mermaid
+classDiagram
+    class Form1 {
+        -operand1: string
+        -operand2: string
+        -operatie: char
+        -operatorApasat: bool
+        -egalApasat: bool
+        +callbackOperand()
+        +callbackOperator()
+        +callbackLogaritm()
+        +callbackVirgula()
+        +callbackEgal()
+        +callbackStergere()
+    }
+```
+
+### Cod (`Form1.cs`)
+```csharp
+using System;
+using System.Windows.Forms;
+
+namespace Subiect_1
+{
+    public partial class Form1 : Form
+    {
+        private string operand1, operand2;
+        private char operatie;
+        private bool operatorApasat;
+        private bool egalApasat;
+
+        public Form1()
+        {
+            InitializeComponent();
+            operand1 = operand2 = null;
+            operatie = '\0';
+            operatorApasat = false;
+            egalApasat = false;
+        }
+
+        private void callbackOperand(object sender, EventArgs e)
+        {
+            Button butonApasat = (Button)sender;
+            if (operand1 == null || egalApasat == true)
+            {
+                afisaj.Clear(); operand1 = null; egalApasat = false;
+            }
+            if (operatorApasat) operand2 += butonApasat.Text;
+            else operand1 += butonApasat.Text;
+            afisaj.AppendText(butonApasat.Text);
+        }
+
+        private void callbackOperator(object sender, EventArgs e)
+        {
+            Button op = (Button)sender;
+            operatie = op.Text[0];
+            afisaj.Clear();
+            operatorApasat = true;
+            egalApasat = false;
+        }
+
+        private void callbackLogaritm(object sender, EventArgs e)
+        {
+            if (operand1 != null)
+            {
+                double arg = Double.Parse(operand1);
+                if (arg <= 0)
+                {
+                    afisaj.AppendText("Eroare! Doar numere strict pozitive.");
+                    operand1 = null; operand2 = null; operatie = '\0';
+                    operatorApasat = false; return;
+                }
+                operand1 = Math.Log(arg).ToString();
+                afisaj.Clear(); afisaj.AppendText(operand1);
+                operatie = '\0'; operatorApasat = false;
+            }
+        }
+
+        private void callbackVirgula(object sender, EventArgs e)
+        {
+            if (operand1 == null || egalApasat)
+            {
+                afisaj.Clear(); operand1 = null; egalApasat = false;
+            }
+            if (operand1 != null && operand1.IndexOf(',') == -1)
+            {
+                if (operatorApasat) operand2 += ",";
+                else operand1 += ",";
+                afisaj.AppendText(",");
+            }
+        }
+
+        private void callbackEgal(object sender, EventArgs e)
+        {
+            if (operand1 != null && operand2 != null)
+            {
+                double rezultat = 0;
+                switch (operatie)
+                {
+                    case '+': rezultat = Double.Parse(operand1) + Double.Parse(operand2); break;
+                    case '-': rezultat = Double.Parse(operand1) - Double.Parse(operand2); break;
+                    case '*': rezultat = Double.Parse(operand1) * Double.Parse(operand2); break;
+                    case '/':
+                        if (Double.Parse(operand2) == 0)
+                        {
+                            afisaj.Clear(); afisaj.AppendText("Eroare! Impartire la 0!");
+                            operand1 = null; operand2 = null; operatie = '\0';
+                            operatorApasat = false; egalApasat = false; return;
+                        }
+                        rezultat = Double.Parse(operand1) / Double.Parse(operand2); break;
+                    case '^': rezultat = Math.Pow(Double.Parse(operand1), Double.Parse(operand2)); break;
+                }
+                afisaj.Clear();
+                operand1 = rezultat.ToString();
+                operand2 = null; operatie = '\0';
+                afisaj.AppendText(operand1);
+                operatorApasat = false; egalApasat = true;
+            }
+        }
+
+        private void callbackStergere(object sender, EventArgs e)
+        {
+            afisaj.Clear();
+            operand1 = null; operand2 = null;
+            operatie = '\0'; operatorApasat = false;
+        }
+    }
+}
+```
+
+---
+
+## 2. Calculator forma poloneza
+
+### Enunt
+Calculator care evalueaza expresii infixate (cu paranteze) prin transformare in **forma postfixata** (algoritmul Shunting-yard cu stiva de operatori + dictionar de prioritati), apoi evalueaza forma postfixata cu stiva de operanzi.
+
+### Diagrama
+```mermaid
+classDiagram
+    class Form1 {
+        -stivaOperatori: Stack~char~
+        -stivaOperanzi: Stack~int~
+        -expresie: string
+        -expresiePostfixata: string
+        -prioritatiOperatori: Dictionary
+        +callbackSimbol()
+        +callbackEgal()
+        +callbackBackspace()
+    }
+```
+
+### Cod (`Form1.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Windows.Forms;
+
+namespace Subiect_2
+{
+    public partial class Form1 : Form
+    {
+        private Stack<char> stivaOperatori;
+        private Stack<int> stivaOperanzi;
+        private string expresie;
+        private string expresiePostfixata;
+        private Dictionary<char, int> prioritatiOperatori;
+        private int rezultat;
+
+        public Form1()
+        {
+            expresie = null; expresiePostfixata = null; rezultat = 0;
+            prioritatiOperatori = new Dictionary<char, int>();
+            prioritatiOperatori.Add('#', -1);
+            prioritatiOperatori.Add('(', 0);
+            prioritatiOperatori.Add('+', 1);
+            prioritatiOperatori.Add('-', 1);
+            prioritatiOperatori.Add('*', 2);
+            prioritatiOperatori.Add('/', 2);
+            stivaOperatori = new Stack<char>();
+            stivaOperanzi = new Stack<int>();
+            InitializeComponent();
+        }
+
+        private bool esteOperator(char s) => s == '+' || s == '-' || s == '*' || s == '/';
+
+        private void callbackEgal(object sender, EventArgs e)
+        {
+            afisaj.Clear();
+            if (expresie == null) return;
+
+            stivaOperatori.Push('#');
+            for (int i = 0; i < expresie.Length; i++)
+            {
+                char simbol = expresie[i];
+                if (Char.IsDigit(simbol)) expresiePostfixata += simbol;
+                else if (esteOperator(simbol))
+                {
+                    while (stivaOperatori.Count != 0 && prioritatiOperatori[simbol] <= prioritatiOperatori[stivaOperatori.Peek()])
+                        expresiePostfixata += stivaOperatori.Pop();
+                    stivaOperatori.Push(simbol);
+                }
+                else if (simbol == '(') stivaOperatori.Push(simbol);
+                else if (simbol == ')')
+                {
+                    while (stivaOperatori.Count != 1 && stivaOperatori.Peek() != '(')
+                        expresiePostfixata += stivaOperatori.Pop();
+                    if (stivaOperatori.Count == 1)
+                    {
+                        afisaj.Clear(); afisaj.AppendText("Eroare!");
+                        stivaOperatori.Clear(); expresie = null; return;
+                    }
+                    stivaOperatori.Pop();
+                }
+                else
+                {
+                    afisaj.Clear(); afisaj.AppendText("Eroare!");
+                    stivaOperatori.Clear(); expresie = null; return;
+                }
+            }
+            while (stivaOperatori.Count != 1)
+            {
+                if (stivaOperatori.Peek() == '(')
+                {
+                    afisaj.Clear(); afisaj.AppendText("Eroare!");
+                    stivaOperatori.Clear(); expresie = null; return;
+                }
+                expresiePostfixata += stivaOperatori.Pop();
+            }
+            stivaOperatori.Clear();
+
+            // Evaluare postfixata
+            int op1, op2;
+            for (int i = 0; i < expresiePostfixata.Length; i++)
+            {
+                char simbol = expresiePostfixata[i];
+                if (Char.IsDigit(simbol)) stivaOperanzi.Push(simbol - '0');
+                else if (esteOperator(simbol))
+                {
+                    op2 = stivaOperanzi.Pop();
+                    op1 = stivaOperanzi.Pop();
+                    switch (simbol)
+                    {
+                        case '+': rezultat = op1 + op2; break;
+                        case '-': rezultat = op1 - op2; break;
+                        case '*': rezultat = op1 * op2; break;
+                        case '/': rezultat = op1 / op2; break;
+                    }
+                    stivaOperanzi.Push(rezultat);
+                }
+            }
+            if (stivaOperanzi.Count == 1)
+            {
+                expresie = stivaOperanzi.Pop().ToString();
+                afisaj.AppendText(expresie);
+            }
+            else { afisaj.AppendText("Eroare la evaluare."); expresie = null; }
+            expresiePostfixata = null;
+            stivaOperanzi.Clear();
+        }
+
+        private void callbackSimbol(object sender, EventArgs e)
+        {
+            if (expresie == null) afisaj.Clear();
+            expresie += ((Button)sender).Text;
+            afisaj.AppendText(((Button)sender).Text);
+        }
+
+        private void callbackBackspace(object sender, EventArgs e)
+        {
+            if (expresie != null)
+            {
+                expresie = expresie.Remove(expresie.Length - 1);
+                afisaj.Clear(); afisaj.AppendText(expresie);
+                if (expresie.Length == 0) expresie = null;
+            }
+        }
+
+        private void callbackStergere(object sender, EventArgs e)
+        {
+            afisaj.Clear(); expresie = null;
+        }
+    }
+}
+```
+
+---
+
+## 3. Client-Server TCP sincron
+
+### Enunt
+Server TCP care primeste mesaje de la mai multi clienti (cate un thread per client), si **trimite mesajele inapoi la TOTI clientii** conectati (broadcast). Foloseste `Socket.Send()` si `Socket.Receive()` sincron.
+
+### Diagrama
+```mermaid
+graph TB
+    C1[Client 1] -->|Send| S[Server port 11000]
+    C2[Client 2] -->|Send| S
+    C3[Client 3] -->|Send| S
+    S -->|broadcast Send| C1
+    S -->|broadcast Send| C2
+    S -->|broadcast Send| C3
+    S -.->|thread per client| T[procesareClient]
+```
+
+### Cod Server (`SocketServerSync.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+
+namespace Server
+{
+    class SocketServerSync
+    {
+        private static List<Socket> clienti;
+        private static List<Thread> threaduri;
+
+        public static void pornireServer()
+        {
+            IPHostEntry ipHostInfo = Dns.Resolve(Dns.GetHostName());
+            IPAddress ipAddress = ipHostInfo.AddressList[0];
+            IPEndPoint localEndPoint = new IPEndPoint(ipAddress, 11000);
+            Socket listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            clienti = new List<Socket>();
+            threaduri = new List<Thread>();
+            try
+            {
+                listener.Bind(localEndPoint);
+                listener.Listen(10);
+                Console.WriteLine("Se asteapta o conexiune...");
+                while (true)
+                {
+                    Socket handler = listener.Accept();
+                    Console.WriteLine("Conectat: {0}.", handler.RemoteEndPoint);
+                    clienti.Add(handler);
+                    Thread t = new Thread(new ParameterizedThreadStart(procesareClient));
+                    threaduri.Add(t);
+                    t.Start(handler);
+                }
+            }
+            catch (Exception e) { Console.WriteLine(e.ToString()); }
+        }
+
+        private static void procesareClient(object obj)
+        {
+            Socket handler = (Socket)obj;
+            byte[] bytes = new byte[1024];
+            string data = null;
+            while (true)
+            {
+                int bytesRec = handler.Receive(bytes);
+                data = Encoding.ASCII.GetString(bytes, 0, bytesRec);
+                if (data.IndexOf("EXIT") > -1)
+                {
+                    Console.WriteLine("Deconectat: {0}.", handler.RemoteEndPoint);
+                    handler.Shutdown(SocketShutdown.Both); handler.Close();
+                    clienti.Remove(handler);
+                    threaduri.Remove(Thread.CurrentThread);
+                    break;
+                }
+                Console.WriteLine("[CLIENT {0}] <<< {1}", handler.RemoteEndPoint, data);
+                byte[] msg = Encoding.ASCII.GetBytes(data);
+                foreach (Socket s in clienti) s.Send(msg);
+            }
+        }
+
+        static void Main(string[] args) => pornireServer();
+    }
+}
+```
+
+### Cod Client (`SocketClientSync.cs`)
+```csharp
+using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+
+namespace Client
+{
+    class SocketClientSync
+    {
+        public static void pornireClient()
+        {
+            IPHostEntry ipHostInfo = Dns.Resolve(Dns.GetHostName());
+            IPAddress ipAddress = ipHostInfo.AddressList[0];
+            IPEndPoint remoteEP = new IPEndPoint(ipAddress, 11000);
+            Socket sender = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            sender.Connect(remoteEP);
+            Console.WriteLine("Conectat la {0}. Scrieti EXIT pentru iesire.", sender.RemoteEndPoint);
+
+            Thread tt = new Thread(new ParameterizedThreadStart(trimitereMesaj));
+            Thread tp = new Thread(new ParameterizedThreadStart(primireRaspuns));
+            tt.Start(sender); tp.Start(sender);
+            tt.Join(); tp.Join();
+            sender.Shutdown(SocketShutdown.Both); sender.Close();
+        }
+
+        private static void primireRaspuns(object obj)
+        {
+            Socket s = (Socket)obj;
+            byte[] bytes = new byte[1024];
+            while (true)
+            {
+                int b = s.Receive(bytes);
+                Console.WriteLine("[SERVER] <<< {0}", Encoding.ASCII.GetString(bytes, 0, b));
+            }
+        }
+
+        private static void trimitereMesaj(object obj)
+        {
+            Socket s = (Socket)obj;
+            string mesaj;
+            do
+            {
+                mesaj = Console.ReadLine();
+                s.Send(Encoding.ASCII.GetBytes(mesaj));
+            } while (mesaj != "EXIT");
+        }
+
+        static void Main(string[] args) => pornireClient();
+    }
+}
+```
+
+---
+
+## 4. Client-Server TCP asincron
+
+### Enunt
+Aceeasi aplicatie ca subiectul 3, dar **asincron** cu `BeginReceive` + callback. In loc de threaduri blocate pe `Receive()`, se foloseste `IAsyncResult` cu `EndReceive`.
+
+### Diagrama
+```mermaid
+graph LR
+    C[Client] -->|BeginReceive| S[Server port 11000]
+    S -->|procesarePrimire callback| Cb[AsyncCallback]
+    Cb -->|BeginReceive recursiv| S
+```
+
+### Cod Server (`SocketServerAsync.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+
+namespace Server
+{
+    class SocketServerAsync
+    {
+        private static List<Socket> clienti;
+        private static List<Thread> threaduri;
+
+        public static void pornireServer()
+        {
+            IPHostEntry ipHostInfo = Dns.Resolve(Dns.GetHostName());
+            IPAddress ipAddress = ipHostInfo.AddressList[0];
+            IPEndPoint localEP = new IPEndPoint(ipAddress, 11000);
+            Socket listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            clienti = new List<Socket>();
+            threaduri = new List<Thread>();
+            listener.Bind(localEP);
+            listener.Listen(10);
+            while (true)
+            {
+                Socket handler = listener.Accept();
+                clienti.Add(handler);
+                Thread t = new Thread(new ParameterizedThreadStart(procesareClient));
+                threaduri.Add(t);
+                t.Start(handler);
+            }
+        }
+
+        private static void procesareClient(object obj)
+        {
+            Socket handler = (Socket)obj;
+            byte[] bytes = new byte[1024];
+            handler.BeginReceive(bytes, 0, bytes.Length, 0,
+                new AsyncCallback(procesarePrimire), new ParametriPrimire(handler, bytes));
+        }
+
+        private class ParametriPrimire
+        {
+            public Socket handler; public byte[] buffer;
+            public ParametriPrimire(Socket s, byte[] b) { handler = s; buffer = b; }
+        }
+
+        private static void procesarePrimire(IAsyncResult ar)
+        {
+            ParametriPrimire p = (ParametriPrimire)ar.AsyncState;
+            int bytesRec = p.handler.EndReceive(ar);
+            if (bytesRec > 0)
+            {
+                string data = Encoding.ASCII.GetString(p.buffer, 0, bytesRec);
+                if (data.IndexOf("EXIT") > -1)
+                {
+                    p.handler.Shutdown(SocketShutdown.Both); p.handler.Close();
+                    clienti.Remove(p.handler);
+                    threaduri.Remove(Thread.CurrentThread);
+                    return;
+                }
+                Console.WriteLine("[CLIENT] <<< {0}", data);
+                p.handler.Send(Encoding.ASCII.GetBytes(data));
+            }
+            p.handler.BeginReceive(p.buffer, 0, p.buffer.Length, 0,
+                new AsyncCallback(procesarePrimire), new ParametriPrimire(p.handler, p.buffer));
+        }
+
+        static void Main(string[] args) => pornireServer();
+    }
+}
+```
+
+### Cod Client (`SocketClientAsync.cs`)
+Similar cu subiectul 3 client, dar foloseste `sender.BeginReceive(...)` cu callback `procesarePrimire`:
+```csharp
+sender.BeginReceive(bytes, 0, bytes.Length, 0, procesarePrimire, new ParametriPrimire(sender, bytes));
+```
+
+---
+
+## 5. MSMQ - cozi de mesaje
+
+### Enunt
+Doua aplicatii WinForms: una **trimite** un obiect serializabil (Student) la o coada privata MSMQ, alta **primeste asincron** (BeginReceive) si afiseaza intr-un textbox.
+
+### Diagrama
+```mermaid
+graph LR
+    Sender[MSMQ_Send<br/>Timer Tick 3s] -->|Send Student| Q[(MSMQ Queue<br/>.\private$\MyPrivateQ)]
+    Q -->|BeginReceive callback| Receiver[MSMQ_Receive<br/>TextBox]
+```
+
+### Cod Student (`Student.cs`)
+```csharp
+using System;
+
+namespace Customer1
+{
+    [Serializable]
+    public class Student
+    {
+        public string mNume;
+        public string mPrenume;
+        public string mGrupa;
+        public Student(string n, string p, string g) { mNume = n; mPrenume = p; mGrupa = g; }
+        public Student() { }
+    }
+}
+```
+
+### Cod MSMQ_Send (`Form1.cs`)
+```csharp
+using System;
+using System.Messaging;
+using System.Windows.Forms;
+using Customer1;
+
+namespace MSMQ
+{
+    public partial class Form1 : Form
+    {
+        MessageQueue mq;
+        Int16 MessageCounter = 0;
+        string[,] studenti = new string[,] {
+            {"Ionescu","Radu","3105"},
+            {"Popescu","Adina","3105"},
+            {"Caraiman","Elena","3106"}
+        };
+
+        public Form1() { InitializeComponent(); }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            MessageCounter++;
+            if (MessageCounter > 2) MessageCounter = 0;
+            if (MessageQueue.Exists(@".\private$\MyPrivateQ"))
+                mq = new MessageQueue(@".\private$\MyPrivateQ");
+            else
+                mq = MessageQueue.Create(@".\private$\MyPrivateQ");
+
+            System.Messaging.Message msg = new System.Messaging.Message();
+            msg.Formatter = new BinaryMessageFormatter();
+            msg.Label = "Student " + (MessageCounter + 1);
+            msg.Body = new Student(studenti[MessageCounter, 0], studenti[MessageCounter, 1], studenti[MessageCounter, 2]);
+            mq.Send(msg);
+        }
+    }
+}
+```
+
+### Cod MSMQ_Receive (`Form1.cs`)
+```csharp
+using System;
+using System.Messaging;
+using System.Windows.Forms;
+using Customer1;
+
+namespace MSMQ_Receive
+{
+    public partial class Form1 : Form
+    {
+        static int messageNumber = 0;
+        MessageQueue mq;
+
+        public Form1() { InitializeComponent(); }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            Control.CheckForIllegalCrossThreadCalls = false;  // IMPORTANT
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            if (MessageQueue.Exists(@".\private$\MyPrivateQ"))
+                mq = new MessageQueue(@".\private$\MyPrivateQ");
+            else
+                mq = MessageQueue.Create(@".\private$\MyPrivateQ");
+            mq.Formatter = new BinaryMessageFormatter();
+            mq.BeginReceive(TimeSpan.FromSeconds(10.0), messageNumber++,
+                new AsyncCallback(MyReceiveCompletedBinary));
+        }
+
+        private void MyReceiveCompletedBinary(IAsyncResult ar)
+        {
+            MessageQueue q = new MessageQueue(@".\private$\MyPrivateQ");
+            System.Messaging.Message msg = q.EndReceive(ar);
+            Student cust = (Student)msg.Body;
+            textBox1.Text += cust.mNume + " " + cust.mPrenume + " " + cust.mGrupa + " ";
+            textBox1.Update();
+            mq.BeginReceive(TimeSpan.FromSeconds(10.0), messageNumber++,
+                new AsyncCallback(MyReceiveCompletedBinary));
+        }
+    }
+}
+```
+
+**Atentie:** la creare proiect, alege .NET Framework 3.5 sau mai mare. Adauga referinta `System.Messaging`.
+
+---
+
+## 6. Web Service ASMX - Notare Studenti
+
+### Enunt
+Web Service ASMX cu metode pentru gestiunea unei aplicatii de notare studenti: adaugare materii, studenti, note, intoarcerea listelor (note per materie, studenti per grupa). Client console care apeleaza serviciul.
+
+### Diagrama
+```mermaid
+graph LR
+    Client[Console Client] -->|SOAP| WS[NotareStudenti Web Service<br/>ASMX]
+    WS --> ListaM[(listaMaterii)]
+    WS --> ListaS[(listaStudenti)]
+    WS --> ListaN[(listaNote)]
+```
+
+### Cod WebService (`NotareStudenti.asmx.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Web.Services;
+
+namespace StudentServices
+{
+    public class NotareStudenti : System.Web.Services.WebService
+    {
+        static int idMaterie = 0;
+        static int idStudent = 0;
+        static List<Materie> listaMaterii = new List<Materie>();
+        static List<Student> listaStudenti = new List<Student>();
+        static List<Note> listaNote = new List<Note>();
+
+        [WebMethod]
+        public void clearLista()
+        {
+            listaMaterii.Clear(); listaStudenti.Clear(); listaNote.Clear();
+            idMaterie = 0; idStudent = 0;
+        }
+
+        [WebMethod]
+        public void adaugaMaterie(string numeMaterie)
+        {
+            listaMaterii.Add(new Materie(idMaterie, numeMaterie));
+            idMaterie++;
+        }
+
+        [WebMethod]
+        public void adaugaStudent(string numeStudent, string grupa)
+        {
+            listaStudenti.Add(new Student(idStudent, numeStudent, grupa));
+            idStudent++;
+        }
+
+        [WebMethod]
+        public int adaugaNota(string numeStudent, string materie, byte nota)
+        {
+            int index1 = -1, index2 = -1;
+            for (int i = 0; i < listaStudenti.Count; i++)
+                if (listaStudenti[i].numeStudent.ToUpper() == numeStudent.ToUpper())
+                    index1 = i;
+            for (int i = 0; i < listaMaterii.Count; i++)
+                if (listaMaterii[i].numeMaterie.ToUpper() == materie.ToUpper())
+                    index2 = i;
+            if (index1 >= 0 && index2 >= 0 && nota < 11)
+                listaNote.Add(new Note(index1, index2, nota));
+            return listaNote.Count;
+        }
+
+        [WebMethod]
+        public string returneazaStudenti(string grupa)
+        {
+            string sr = "";
+            foreach (Student s in listaStudenti)
+                if (s.grupaStudent == grupa) sr += s.numeStudent + ";";
+            return sr;
+        }
+
+        [WebMethod]
+        public string returneazaNote(string materie)
+        {
+            string sr = "";
+            int idM = -1;
+            for (int i = 0; i < listaMaterii.Count; i++)
+                if (listaMaterii[i].numeMaterie.ToUpper() == materie.ToUpper())
+                    idM = i;
+            if (idM < 0) return sr;
+            foreach (Note n in listaNote)
+                if (n.idMaterie == idM)
+                    sr += listaStudenti[n.idStudent].numeStudent + " " + n.nota + ";";
+            return sr;
+        }
+    }
+
+    public class Materie
+    {
+        public int idMaterie; public string numeMaterie;
+        public Materie(int id, string m) { idMaterie = id; numeMaterie = m; }
+    }
+    public class Student
+    {
+        public int idStudent; public string numeStudent; public string grupaStudent;
+        public Student(int id, string s, string g) { idStudent = id; numeStudent = s; grupaStudent = g; }
+    }
+    public class Note
+    {
+        public int idStudent; public int idMaterie; public byte nota;
+        public Note(int ids, int idm, byte n) { idStudent = ids; idMaterie = idm; nota = n; }
+    }
+}
+```
+
+### Cod Client
+```csharp
+using System;
+
+namespace WEBTest
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            ServiceReference1.NotareStudentiSoapClient notare =
+                new ServiceReference1.NotareStudentiSoapClient();
+            notare.clearLista();
+            notare.adaugaMaterie("SistemeDistribuite");
+            notare.adaugaStudent("Ionescu Vasile", "3105");
+            notare.adaugaStudent("Popescu Claudiu", "3106");
+            notare.adaugaNota("Ionescu Vasile", "SistemeDistribuite", 10);
+            notare.adaugaNota("Popescu Claudiu", "SistemeDistribuite", 9);
+
+            string sr = notare.returneazaStudenti("3105");
+            foreach (string s in sr.Split(';')) Console.WriteLine(s);
+            sr = notare.returneazaNote("SistemeDistribuite");
+            foreach (string s in sr.Split(';')) Console.WriteLine(s);
+            Console.ReadLine();
+        }
+    }
+}
+```
+
+**Pasi:** Creeaza Empty Web Application cu .NET Framework 3.5, adauga ASMX. Apoi in client adauga Service Reference la URL-ul web service-ului.
+
+---
+
+## 7. .NET Remoting SAO Singleton
+
+### Enunt
+Aplicatie distribuita cu .NET Remoting **Server-Activated Object (SAO) Singleton**. Biblioteca (`StudentLibrary`) cu `MarshalByRefObject` - gestiune studenti, note. Server expune obiectul ca singleton, client se conecteaza si invoca metode.
+
+### Diagrama
+```mermaid
+graph LR
+    C[Client] -->|HTTP channel port 9090| S[SAO Server<br/>Singleton]
+    S --> SS[StudentService<br/>MarshalByRefObject]
+    SS --> Lib[StudentLibrary]
+```
+
+### Cod StudentLibrary (`StudentService.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+
+namespace StudentLibrary
+{
+    public class StudentService : MarshalByRefObject
+    {
+        private List<string> materii;
+        private List<Grupa> grupeStudenti;
+        private List<Nota> note;
+
+        public StudentService() { materii = null; grupeStudenti = null; note = null; }
+
+        private class Nota
+        {
+            public double nota; public int idStudent; public int idMaterie;
+            public Nota(double n, int ids, int idm) { nota = n; idStudent = ids; idMaterie = idm; }
+            public bool isEqual(Nota n) => n.nota == nota && n.idStudent == idStudent && n.idMaterie == idMaterie;
+        }
+
+        private class Grupa
+        {
+            public string grupa;
+            public List<string> studenti;
+            public Grupa(string g) { grupa = g; studenti = new List<string>(); }
+            public void adauga(string s) { if (!studenti.Contains(s)) studenti.Add(s); }
+        }
+
+        [Serializable]
+        public class StudentNota
+        {
+            public string numeStudent; public double nota;
+            public StudentNota() { numeStudent = ""; nota = 0; }
+            public StudentNota(string ns, double n) { numeStudent = ns; nota = n; }
+        }
+
+        public int adaugaMaterie(string n)
+        {
+            if (materii == null) materii = new List<string>();
+            if (materii.Contains(n)) return materii.IndexOf(n);
+            materii.Add(n);
+            return materii.IndexOf(n);
+        }
+
+        public int adaugaStudent(string n, string g)
+        {
+            if (grupeStudenti == null) grupeStudenti = new List<Grupa>();
+            foreach (Grupa gr in grupeStudenti)
+                if (gr.grupa == g) { gr.adauga(n); return gr.studenti.IndexOf(n); }
+            Grupa noua = new Grupa(g); noua.adauga(n);
+            grupeStudenti.Add(noua);
+            return noua.studenti.IndexOf(n);
+        }
+
+        public bool adaugaNota(double nota, int idS, int idM)
+        {
+            if (note == null) note = new List<Nota>();
+            Nota n = new Nota(nota, idS, idM);
+            foreach (Nota e in note) if (e.isEqual(n)) return false;
+            note.Add(n); return true;
+        }
+
+        public StudentNota[] returneazaNote(int idMaterie)
+        {
+            if (note == null || materii == null) return null;
+            List<StudentNota> lista = new List<StudentNota>();
+            foreach (Nota n in note)
+                if (n.idMaterie == idMaterie)
+                    lista.Add(new StudentNota(materii[idMaterie], n.nota));
+            return lista.ToArray();
+        }
+
+        public string[] returneazaStudenti(string g)
+        {
+            if (grupeStudenti == null) return null;
+            foreach (Grupa gr in grupeStudenti)
+                if (gr.grupa == g) return gr.studenti.ToArray();
+            return null;
+        }
+    }
+}
+```
+
+### Cod Server (`SAOServer.cs`)
+```csharp
+using System;
+using System.Runtime.Remoting;
+using System.Runtime.Remoting.Channels;
+using System.Runtime.Remoting.Channels.Http;
+using StudentLibrary;
+
+namespace Server
+{
+    class SAOServer
+    {
+        static void Main(string[] args)
+        {
+            HttpServerChannel ch = new HttpServerChannel(9090);
+            ChannelServices.RegisterChannel(ch);
+            RemotingConfiguration.RegisterWellKnownServiceType(
+                typeof(StudentService), "RemoteObject.rem",
+                WellKnownObjectMode.Singleton);
+            Console.WriteLine("ENTER pentru oprire.");
+            Console.Read();
+        }
+    }
+}
+```
+
+### Cod Client (`SAOClient.cs`)
+```csharp
+using System;
+using System.Runtime.Remoting;
+using System.Runtime.Remoting.Channels;
+using System.Runtime.Remoting.Channels.Http;
+using StudentLibrary;
+
+namespace Client
+{
+    class SAOClient
+    {
+        static void Main(string[] args)
+        {
+            HttpClientChannel ch = new HttpClientChannel();
+            ChannelServices.RegisterChannel(ch);
+            WellKnownClientTypeEntry t = new WellKnownClientTypeEntry(
+                typeof(StudentService),
+                "http://localhost:9090/RemoteObject.rem");
+            RemotingConfiguration.RegisterWellKnownClientType(t);
+
+            StudentService ss = new StudentService();
+            int idSD = ss.adaugaMaterie("Sisteme Distribuite");
+            int idS1 = ss.adaugaStudent("Ionescu", "1307A");
+            ss.adaugaNota(9, idS1, idSD);
+
+            foreach (var n in ss.returneazaNote(idSD))
+                Console.WriteLine("{0} -> {1}", n.numeStudent, n.nota);
+            Console.Read();
+        }
+    }
+}
+```
+
+---
+
+## 8. .NET Remoting CAO
+
+### Enunt
+Identic cu subiectul 7, dar **Client-Activated Object (CAO)** in loc de SAO Singleton. Diferenta: fiecare client are propria instanta a obiectului pe server.
+
+### Diferente fata de subiect 7
+
+**Server:**
+```csharp
+RemotingConfiguration.RegisterActivatedServiceType(typeof(StudentService));
+// in loc de RegisterWellKnownServiceType
+```
+
+**Client:**
+```csharp
+ActivatedClientTypeEntry t = new ActivatedClientTypeEntry(typeof(StudentService), "http://localhost:9090");
+RemotingConfiguration.RegisterActivatedClientType(t);
+// in loc de RegisterWellKnownClientType
+```
+
+Restul codului (`StudentLibrary`, apelurile metode) este identic.
+
+---
+
+## 9. Web Service Employees
+
+### Enunt
+Web Service ASMX care gestioneaza o ierarhie `Manager -> Subordonati`. Metode: `AddManager`, `AddEmployee`, `GetManagerOf`, `GetEmployeesOf`. Foloseste `[XmlInclude]` pentru serializare obiecte custom.
+
+### Diagrama
+```mermaid
+classDiagram
+    class Employee {
+        +name: string
+        +age: int
+        +noEmp: int
+        +empList: List~Employee~
+        +addSubordinate(Employee)
+    }
+    class Service1 {
+        -managerList: List
+        +AddManager(Employee)
+        +AddEmployee(Employee, Employee)
+        +GetManagerOf(Employee) Employee
+        +GetEmployeesOf(Employee) Employee[]
+    }
+    Service1 --> Employee
+    Employee o-- Employee
+```
+
+### Cod WebService (`Service1.asmx.cs`)
+```csharp
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Web.Services;
+using System.Xml.Serialization;
+
+namespace EmployeeWebService
+{
+    public class Employee
+    {
+        public string name;
+        public int age, noEmp;
+        public List<Employee> empList;
+        public void addSubordinate(Employee e) { empList.Add(e); }
+    }
+
+    [WebService(Namespace = "http://tempuri.org/")]
+    [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
+    [ToolboxItem(false)]
+    public class Service1 : System.Web.Services.WebService
+    {
+        private static List<Employee> managerList = new List<Employee>();
+
+        [WebMethod]
+        public void AddManager(Employee m)
+        {
+            m.empList = new List<Employee>();
+            managerList.Add(m);
+        }
+
+        [WebMethod]
+        public void AddEmployee(Employee m, Employee e)
+        {
+            foreach (Employee localM in managerList)
+                if (localM.name == m.name) { localM.addSubordinate(e); break; }
+        }
+
+        [WebMethod]
+        [XmlInclude(typeof(Employee))]
+        public Employee GetManagerOf(Employee e)
+        {
+            foreach (Employee m in managerList)
+                foreach (Employee emp in m.empList)
+                    if (emp.name == e.name) return m;
+            return null;
+        }
+
+        [WebMethod]
+        [XmlInclude(typeof(Employee))]
+        public Employee[] GetEmployeesOf(Employee manager)
+        {
+            foreach (Employee m in managerList)
+                if (m.name == manager.name) return m.empList.ToArray();
+            return null;
+        }
+    }
+}
+```
+
+### Cod Client (console)
+```csharp
+using System;
+using EmployeeWebApplication.EmployeeService;
+
+class Program
+{
+    static void Main()
+    {
+        var svc = new Service1SoapClient();
+
+        Employee m = new Employee { name = "Manager1", age = 45 };
+        svc.AddManager(m);
+
+        Employee e1 = new Employee { name = "Ana", age = 25 };
+        Employee e2 = new Employee { name = "Bob", age = 28 };
+        svc.AddEmployee(m, e1);
+        svc.AddEmployee(m, e2);
+
+        Employee[] lst = svc.GetEmployeesOf(m);
+        foreach (var x in lst) Console.WriteLine("{0} - {1}", x.name, x.age);
+
+        foreach (var x in lst)
+        {
+            Employee mgr = svc.GetManagerOf(x);
+            Console.WriteLine("{0} -> manager: {1}", x.name, mgr.name);
+        }
+        Console.Read();
+    }
+}
+```
+
+---
+
+## 10. Suma vector cu Threads
+
+### Enunt
+Suma elementelor unui vector folosind **thread-uri in mai multe runde**. Vector initial `{9,9,9,9,9,9,9,9}` (8 elem). Runda 1: 4 perechi sumate de 4 threaduri. Runda 2: 2 perechi. Runda 3: 1 pereche. Rezultatul final in `numere[0]`. Se scriu calculele intr-un fisier `calcule.txt`.
+
+### Diagrama
+```mermaid
+graph TB
+    V[Vector 8 elem] --> R1[Runda 1: 4 threads<br/>perechi 0+1, 2+3, 4+5, 6+7]
+    R1 --> R2[Runda 2: 2 threads<br/>perechi 0+2, 4+6]
+    R2 --> R3[Runda 3: 1 thread<br/>0+4]
+    R3 --> Out[numere 0 = suma totala]
+```
+
+### Cod (`Program.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading;
+
+namespace Subiect_10
+{
+    class Program
+    {
+        private static Int32[] numere = { 9, 9, 9, 9, 9, 9, 9, 9 };
+        private static int n = 8;
+        private static List<Thread> thread_list = new List<Thread>();
+        private static StreamWriter sw = new StreamWriter("calcule.txt");
+
+        static void Main(string[] args)
+        {
+            int p = 1;
+            while (n != 0)
+            {
+                n /= 2; p *= 2;
+                for (int i = 0; i < n; i++)
+                {
+                    IndiciSumare isum = new IndiciSumare(p * i, p * i + p / 2);
+                    Thread t = new Thread(new ParameterizedThreadStart(sumare));
+                    thread_list.Add(t);
+                    t.Start(isum);
+                }
+                foreach (Thread t in thread_list) t.Join();
+                thread_list.Clear();
+            }
+            Console.WriteLine("Rezultat: {0}", numere[0]);
+            sw.Close();
+            Console.Read();
+        }
+
+        private static void sumare(object obj)
+        {
+            IndiciSumare isum = (IndiciSumare)obj;
+            sw.WriteLine("Thread {0}: {1} + {2} = {3}",
+                Thread.CurrentThread.ManagedThreadId,
+                numere[isum.I], numere[isum.J],
+                numere[isum.I] + numere[isum.J]);
+            numere[isum.I] = numere[isum.I] + numere[isum.J];
+        }
+
+        private class IndiciSumare
+        {
+            public int I, J;
+            public IndiciSumare(int i, int j) { I = i; J = j; }
+        }
+    }
+}
+```
+
+---
+
+## 11. Suma 0..n cu 4 threaduri
+
+### Enunt
+Citeste `n` (multiplu de 4). Imparte intervalul `[0, n]` in 4 subintervale egale si fiecare thread sumeaza pe subintervalul lui. Thread-ul master aduna rezultatele partiale.
+
+### Diagrama
+```mermaid
+graph LR
+    Master[Main thread] --> I1[Thread 1: 0..n/4]
+    Master --> I2[Thread 2: n/4+1..n/2]
+    Master --> I3[Thread 3: n/2+1..3n/4]
+    Master --> I4[Thread 4: 3n/4+1..n]
+    I1 --> Sum[Master suma finala]
+    I2 --> Sum
+    I3 --> Sum
+    I4 --> Sum
+```
+
+### Cod (`Program.cs`)
+```csharp
+using System;
+using System.Threading;
+
+namespace Subiect_11
+{
+    class Program
+    {
+        private static int n = 0;
+        private static int rezultat = 0;
+
+        static void Main(string[] args)
+        {
+            Console.Write("Introduceti n (multiplu de 4): ");
+            try { n = Int32.Parse(Console.ReadLine()); }
+            catch { Console.WriteLine("Numar invalid."); Console.Read(); return; }
+            if (n % 4 != 0) { Console.WriteLine("Nu e multiplu de 4."); Console.Read(); return; }
+
+            IntervalSumare i1 = new IntervalSumare(0, n / 4);
+            IntervalSumare i2 = new IntervalSumare(n / 4 + 1, n / 2);
+            IntervalSumare i3 = new IntervalSumare(n / 2 + 1, 3 * n / 4);
+            IntervalSumare i4 = new IntervalSumare(3 * n / 4 + 1, n);
+
+            Thread t1 = new Thread(new ParameterizedThreadStart(aduna));
+            Thread t2 = new Thread(new ParameterizedThreadStart(aduna));
+            Thread t3 = new Thread(new ParameterizedThreadStart(aduna));
+            Thread t4 = new Thread(new ParameterizedThreadStart(aduna));
+            t1.Start(i1); t2.Start(i2); t3.Start(i3); t4.Start(i4);
+            t1.Join(); t2.Join(); t3.Join(); t4.Join();
+
+            rezultat += i1.Rezultat + i2.Rezultat + i3.Rezultat + i4.Rezultat;
+            Console.WriteLine("Suma de la 0 la {0}: {1}", n, rezultat);
+            Console.Read();
+        }
+
+        private static void aduna(object obj)
+        {
+            IntervalSumare isum = (IntervalSumare)obj;
+            for (int i = isum.Inceput; i <= isum.Sfarsit; i++)
+                isum.Rezultat += i;
+        }
+
+        private class IntervalSumare
+        {
+            public int Inceput, Sfarsit, Rezultat = 0;
+            public IntervalSumare(int i, int j) { Inceput = i; Sfarsit = j; }
+        }
+    }
+}
+```
+
+---
+
+## 12. Vector: inmultire + sort + XY
+
+### Enunt
+Citeste un vector de `n` numere si o constanta `alfa`. Apoi 3 threaduri secventiale: (1) inmulteste vectorul cu `alfa`; (2) sorteaza; (3) afiseaza in coordonate X,Y (ca matrice patratica).
+
+### Diagrama
+```mermaid
+graph LR
+    V[Vector] --> T1[Thread 1: inmultire cu alfa]
+    T1 --> T2[Thread 2: sortare]
+    T2 --> T3[Thread 3: afisare XY]
+```
+
+### Cod (`Program.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+
+namespace Subiect_12
+{
+    class Program
+    {
+        private static List<double> vector = new List<double>();
+        private static int n;
+        private static double alfa;
+
+        static void Main(string[] args)
+        {
+            Console.Write("n: "); n = Int32.Parse(Console.ReadLine());
+            Console.Write("alfa: "); alfa = Double.Parse(Console.ReadLine());
+            for (int i = 0; i < n; i++)
+            {
+                Console.Write("Numar {0}: ", i + 1);
+                vector.Add(Double.Parse(Console.ReadLine()));
+            }
+
+            Thread t1 = new Thread(new ThreadStart(inmultireCuAlfa));
+            t1.Start(); t1.Join();
+            afisareVector();
+
+            Thread t2 = new Thread(new ThreadStart(sortare));
+            t2.Start(); t2.Join();
+            afisareVector();
+
+            Thread t3 = new Thread(new ThreadStart(afisareXY));
+            t3.Start(); t3.Join();
+
+            Console.Read();
+        }
+
+        private static void afisareVector()
+        {
+            foreach (double elem in vector) Console.Write("{0}; ", elem);
+            Console.WriteLine();
+        }
+
+        private static void inmultireCuAlfa()
+        {
+            for (int i = 0; i < n; i++) vector[i] *= alfa;
+        }
+
+        private static void sortare() => vector.Sort();
+
+        private static void afisareXY()
+        {
+            int dim = 1;
+            while (dim * dim < n) dim++;
+            int j = 0;
+            for (int k = 0; k < n; k++)
+            {
+                Console.Write("{0} ", vector.ElementAt(k));
+                if (++j == dim) { j = 0; Console.WriteLine(); }
+            }
+        }
+    }
+}
+```
+
+---
+
+## 13. MergeSort recursiv cu Threads
+
+### Enunt
+Implementare MergeSort cu **thread-uri pentru fiecare apel recursiv**. Fiecare partitie pleaca cu 2 thread-uri noi pentru cele 2 jumatati, apoi interclaseaza.
+
+### Diagrama
+```mermaid
+graph TB
+    M[mergeSort 0..n-1] --> L[Thread stanga 0..mij]
+    M --> R[Thread dreapta mij+1..n-1]
+    L --> LL[Thread stanga stanga]
+    L --> LR[Thread stanga dreapta]
+    R --> RL[Thread dreapta stanga]
+    R --> RR[Thread dreapta dreapta]
+    LL & LR & RL & RR --> I[interclasare]
+```
+
+### Cod (`Program.cs`)
+```csharp
+using System;
+using System.Threading;
+
+namespace Subiect_13
+{
+    class Program
+    {
+        private static int n;
+        private static double[] vector;
+
+        static void Main(string[] args)
+        {
+            Console.Write("n (max 128): "); n = Int32.Parse(Console.ReadLine());
+            if (n > 128) { Console.WriteLine("n prea mare."); Console.Read(); return; }
+            vector = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                Console.Write("Numar {0}: ", i + 1);
+                vector[i] = Double.Parse(Console.ReadLine());
+            }
+
+            mergeSort(new IntervalSortare(0, n - 1));
+
+            foreach (double e in vector) Console.Write("{0}; ", e);
+            Console.Read();
+        }
+
+        private static void mergeSort(object obj)
+        {
+            IntervalSortare isort = (IntervalSortare)obj;
+            int st = isort.St, dr = isort.Dr;
+            if (st < dr)
+            {
+                int mij = (st + dr) / 2;
+                Thread t1 = new Thread(new ParameterizedThreadStart(mergeSort));
+                Thread t2 = new Thread(new ParameterizedThreadStart(mergeSort));
+                t1.Start(new IntervalSortare(st, mij));
+                t2.Start(new IntervalSortare(mij + 1, dr));
+                t1.Join(); t2.Join();
+                interclasare(st, mij, dr);
+            }
+        }
+
+        private class IntervalSortare
+        {
+            public int St, Dr;
+            public IntervalSortare(int s, int d) { St = s; Dr = d; }
+        }
+
+        private static void interclasare(int st, int mij, int dr)
+        {
+            int n1 = mij - st + 1, n2 = dr - mij;
+            double[] t1 = new double[n1], t2 = new double[n2];
+            for (int i = 0; i < n1; i++) t1[i] = vector[st + i];
+            for (int j = 0; j < n2; j++) t2[j] = vector[mij + 1 + j];
+
+            int x = 0, y = 0, k = st;
+            while (x < n1 && y < n2)
+            {
+                if (t1[x] <= t2[y]) vector[k++] = t1[x++];
+                else vector[k++] = t2[y++];
+            }
+            while (x < n1) vector[k++] = t1[x++];
+            while (y < n2) vector[k++] = t2[y++];
+        }
+    }
+}
+```
+
+---
+
+## 14. Citire fisiere -> unul singur
+
+### Enunt
+Citeste `n` nume de fisiere de intrare + 1 fisier de iesire. Pentru fiecare fisier de intrare creeaza un thread care citeste linie cu linie. Toate threadurile **scriu in acelasi fisier de iesire** folosind `lock` pentru sectiune critica.
+
+### Diagrama
+```mermaid
+graph TB
+    F1[fisier1.txt] --> T1[Thread 1]
+    F2[fisier2.txt] --> T2[Thread 2]
+    F3[fisier3.txt] --> T3[Thread 3]
+    T1 -->|lock| W[StreamWriter out.txt]
+    T2 -->|lock| W
+    T3 -->|lock| W
+```
+
+### Cod (`Program.cs`)
+```csharp
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+
+namespace Subiect_14
+{
+    class Program
+    {
+        private static int n;
+        private static List<StreamReader> readereFisiere;
+        private static StreamWriter writerIesire;
+        private static Object writeLock = new Object();
+        private static List<Thread> threaduri;
+
+        static void Main(string[] args)
+        {
+            Console.Write("Nr fisiere intrare: "); n = Int32.Parse(Console.ReadLine());
+            readereFisiere = new List<StreamReader>();
+            for (int i = 0; i < n; i++)
+            {
+                Console.Write("Fisier {0}: ", i + 1);
+                string nf = Console.ReadLine();
+                try { readereFisiere.Add(new StreamReader(nf)); }
+                catch { Console.WriteLine("Eroare {0}", nf); return; }
+            }
+            Console.Write("Fisier iesire: ");
+            writerIesire = new StreamWriter(Console.ReadLine());
+
+            threaduri = new List<Thread>();
+            for (int i = 0; i < n; i++)
+            {
+                Thread t = new Thread(new ParameterizedThreadStart(procesare));
+                threaduri.Add(t);
+                t.Start(readereFisiere.ElementAt(i));
+            }
+            foreach (Thread t in threaduri) t.Join();
+            writerIesire.Close();
+            Console.Read();
+        }
+
+        private static void procesare(object obj)
+        {
+            StreamReader sr = (StreamReader)obj;
+            string linie;
+            while ((linie = sr.ReadLine()) != null)
+            {
+                lock (writeLock) { writerIesire.WriteLine(linie); }
+            }
+            sr.Close();
+        }
+    }
+}
+```
+
+---
+
+## 15. Citire fisiere Asincron
+
+### Enunt
+Ca subiectul 14, dar in loc de threaduri foloseste **delegati asincroni** (`BeginInvoke` + `WaitHandle.WaitAll`).
+
+### Cod cheie (`Program.cs`)
+```csharp
+private delegate void delegatProcesareFisier(StreamReader f);
+private static List<WaitHandle> handleDelegati;
+
+static void Main(string[] args)
+{
+    // ... citire fisiere ca la subiect 14 ...
+    handleDelegati = new List<WaitHandle>();
+    delegatProcesareFisier dlg = new delegatProcesareFisier(procesareFisier);
+
+    for (int i = 0; i < n; i++)
+    {
+        IAsyncResult r = dlg.BeginInvoke(readereFisiere.ElementAt(i), null, null);
+        handleDelegati.Add(r.AsyncWaitHandle);
+    }
+    WaitHandle.WaitAll(handleDelegati.ToArray());
+    writerIesire.Close();
+}
+
+private static void procesareFisier(StreamReader f)
+{
+    string linie;
+    while ((linie = f.ReadLine()) != null)
+        writerIesire.WriteLine(linie);
+    f.Close();
+}
+```
+
+---
+
+## 16. Ceas kernel32.dll
+
+### Enunt
+Aplicatie WinForms care **importa `GetSystemTime` din `kernel32.dll`** prin `DllImport` si afiseaza ora intr-un label, actualizata de un `Timer` la fiecare secunda.
+
+### Diagrama
+```mermaid
+graph LR
+    Timer[Timer Interval 1s] -->|Tick| Cb[afiseazaOra]
+    Cb -->|DllImport| K32[kernel32.dll<br/>GetSystemTime]
+    K32 --> Sys[SYSTEMTIME struct]
+    Sys --> Label[Label ceas]
+```
+
+### Cod (`Form1.cs`)
+```csharp
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+namespace Subiect_16
+{
+    public partial class Form1 : Form
+    {
+        [DllImport("kernel32.dll")]
+        private extern static void GetSystemTime(ref SYSTEMTIME lpSystemTime);
+
+        private struct SYSTEMTIME
+        {
+            public ushort wYear, wMonth, wDayOfWeek, wDay;
+            public ushort wHour, wMinute, wSecond, wMilliseconds;
+        }
+
+        private static SYSTEMTIME timp = new SYSTEMTIME();
+
+        public Form1()
+        {
+            InitializeComponent();
+            Timer t = new Timer();
+            t.Interval = 1000;
+            t.Tick += new EventHandler(afiseazaOra);
+            t.Start();
+        }
+
+        public void afiseazaOra(object obj, EventArgs args)
+        {
+            GetSystemTime(ref timp);
+            DateTime d = new DateTime(timp.wYear, timp.wMonth, timp.wDay,
+                timp.wHour, timp.wMinute, timp.wSecond);
+            d = d.ToLocalTime();
+            ceas.Text = d.ToString();
+        }
+    }
+}
+```
+
+---
+
+## 17. TreeView -> XML
+
+### Enunt
+Aplicatie WinForms care:
+1. Deschide un XML si il afiseaza ca arbore in `TreeView` (`CheckBoxes = true`).
+2. Permite bifarea/debifarea nodurilor (la bifarea unui parinte se bifeaza si copiii, etc.).
+3. Salveaza nodurile **bifate** intr-un nou XML.
+
+### Diagrama
+```mermaid
+graph LR
+    XML1[XML input] -->|XmlDocument.Load| TV[TreeView]
+    TV -->|user bifeaza| TV
+    TV -->|XmlTextWriter| XML2[XML output<br/>doar bifate]
+```
+
+### Cod (`Form1.cs`)
+```csharp
+using System;
+using System.Text;
+using System.Windows.Forms;
+using System.Xml;
+
+namespace Subiect_17
+{
+    public partial class Form1 : Form
+    {
+        XmlDocument xml = null;
+        string fisierXML = null;
+
+        public Form1() { InitializeComponent(); }
+
+        private void butonDeschideXML_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog ofd = new OpenFileDialog();
+            ofd.Filter = "XML (*.xml)|*.xml";
+            if (ofd.ShowDialog() != DialogResult.OK) return;
+            fisierXML = ofd.FileName;
+            xml = new XmlDocument();
+            xml.Load(fisierXML);
+            treeView.Nodes.Clear();
+            treeView.Nodes.Add(new TreeNode(xml.DocumentElement.Name));
+            adaugaNoduri(xml.DocumentElement, treeView.Nodes[0]);
+            treeView.ExpandAll();
+        }
+
+        private void adaugaNoduri(XmlNode nodXML, TreeNode nodTV)
+        {
+            if (nodXML.HasChildNodes)
+            {
+                for (int i = 0; i < nodXML.ChildNodes.Count; i++)
+                {
+                    nodTV.Nodes.Add(new TreeNode(nodXML.ChildNodes[i].Name));
+                    adaugaNoduri(nodXML.ChildNodes[i], nodTV.Nodes[i]);
+                }
+            }
+            else nodTV.Text = nodXML.OuterXml.Trim();
+        }
+
+        private void OnAfterCheck(object sender, TreeViewEventArgs e)
+        {
+            if (e.Action == TreeViewAction.Unknown) return;
+            bifeazaFii(e.Node);
+            if (e.Node.Checked)
+            {
+                TreeNode n = e.Node;
+                while (n.Parent != null) { n.Parent.Checked = true; n = n.Parent; }
+            }
+        }
+
+        private void bifeazaFii(TreeNode parinte)
+        {
+            if (parinte == null) return;
+            foreach (TreeNode fiu in parinte.Nodes)
+            {
+                fiu.Checked = parinte.Checked;
+                bifeazaFii(fiu);
+            }
+        }
+
+        private void butonSalvareXML_Click(object sender, EventArgs e)
+        {
+            SaveFileDialog sfd = new SaveFileDialog();
+            sfd.ShowDialog();
+            XmlTextWriter w = new XmlTextWriter(sfd.FileName, Encoding.ASCII);
+            w.Formatting = Formatting.Indented;
+            w.WriteStartDocument();
+            w.WriteStartElement("treeview");
+            saveNodes(treeView.Nodes, w);
+            w.WriteEndElement();
+            w.Close();
+            MessageBox.Show("Salvat!");
+        }
+
+        private void saveNodes(TreeNodeCollection lista, XmlTextWriter w)
+        {
+            foreach (TreeNode nod in lista)
+                if (nod.Checked)
+                {
+                    w.WriteStartElement("node");
+                    w.WriteAttributeString("text", nod.Text);
+                    if (nod.Nodes.Count > 0) saveNodes(nod.Nodes, w);
+                    w.WriteEndElement();
+                }
+        }
+    }
+}
+```
+
+---
+
+## 18. Structura directoare -> XML
+
+### Enunt
+Aplicatie WinForms cu `FolderBrowserDialog`. Selecteaza un director si scrie **recursiv** structura de foldere si fisiere intr-un XML cu numele folderului radacina + `.xml`.
+
+### Cod (`Form1.cs`)
+```csharp
+using System;
+using System.IO;
+using System.Text;
+using System.Windows.Forms;
+using System.Xml;
+
+namespace Subiect_18
+{
+    public partial class Form1 : Form
+    {
+        DirectoryInfo folder = null;
+
+        public Form1() { InitializeComponent(); }
+
+        private void butonDeschidereDirector_Click(object sender, EventArgs e)
+        {
+            FolderBrowserDialog fbd = new FolderBrowserDialog();
+            if (fbd.ShowDialog() == DialogResult.OK)
+            {
+                folder = new DirectoryInfo(fbd.SelectedPath);
+                folderDeschis.Text = folder.Name;
+            }
+        }
+
+        private void butonScriereXML_Click(object sender, EventArgs e)
+        {
+            if (folder == null) return;
+            XmlTextWriter w = new XmlTextWriter(folder.Name + ".xml", Encoding.ASCII);
+            w.Formatting = Formatting.Indented;
+            w.WriteStartDocument();
+            salvareFoldere(folder, w);
+            w.WriteEndDocument();
+            w.Close();
+            MessageBox.Show("Salvat in " + folder.Name + ".xml");
+        }
+
+        private void salvareFoldere(DirectoryInfo dir, XmlTextWriter w)
+        {
+            if (dir == null) return;
+            w.WriteStartElement("folder");
+            w.WriteAttributeString("nume", dir.Name);
+            try
+            {
+                foreach (DirectoryInfo d in dir.GetDirectories())
+                    salvareFoldere(d, w);
+                foreach (FileInfo f in dir.GetFiles())
+                {
+                    w.WriteStartElement("fisier");
+                    w.WriteAttributeString("nume", f.Name);
+                    w.WriteEndElement();
+                }
+            }
+            catch { /* permisiuni */ }
+            finally { w.WriteEndElement(); }
+        }
+    }
+}
+```
+
+---
+
+## 19. Suport limba
+
+### Enunt
+Aplicatie WinForms cu un `Label`. Un `Timer` la 3 secunde schimba ciclic limba: **EN -> RU -> DE** folosind `ResourceManager` + `CultureInfo` + fisiere `.resx` (`lang_en`, `lang_ru`, `lang_gr`).
+
+### Diagrama
+```mermaid
+graph LR
+    Timer[Timer 3s] -->|i%3| Lang{i mod 3}
+    Lang -->|0| EN[en-US lang_en.resx]
+    Lang -->|1| DE[de-DE lang_gr.resx]
+    Lang -->|2| RU[ru-RU lang_ru.resx]
+    EN & DE & RU --> Label
+```
+
+### Cod (`Form1.cs`)
+```csharp
+using System;
+using System.Globalization;
+using System.Reflection;
+using System.Resources;
+using System.Windows.Forms;
+
+namespace pb19
+{
+    public partial class Form1 : Form
+    {
+        public static int i = 0;
+
+        public Form1()
+        {
+            InitializeComponent();
+            timer1.Start();
+            timer1.Interval = 3000;
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            CultureInfo c;
+            ResourceManager rm;
+            Assembly a = Assembly.Load("pb19");
+
+            if (i % 3 == 0)
+            {
+                c = new CultureInfo("en-US");
+                rm = new ResourceManager("pb19.Lang.lang_en", a);
+            }
+            else if (i % 2 == 1)
+            {
+                c = new CultureInfo("ru-RU");
+                rm = new ResourceManager("pb19.Lang.lang_ru", a);
+            }
+            else
+            {
+                c = new CultureInfo("de-DE");
+                rm = new ResourceManager("pb19.Lang.lang_gr", a);
+            }
+            label1.Text = rm.GetString("label1", c);
+            i = (i + 1) % 3;
+        }
+    }
+}
+```
+
+**Necesar:** in proiect adauga folder `Lang` cu fisierele `.resx`: `lang_en.resx`, `lang_ru.resx`, `lang_gr.resx`, fiecare cu cheia `label1` si valoarea tradusa.
+
+---
+
+## 20. App.config -> XML
+
+### Enunt
+Aplicatie WinForms care:
+1. Citeste valori dintr-un `App.config` (sectiunea `<appSettings>`) folosind `ConfigurationManager.AppSettings`.
+2. Suma valorilor afisata pe form.
+3. Salveaza rezultatul intr-un XML cu `XmlTextWriter`.
+
+### App.config
+```xml
+<?xml version="1.0"?>
+<configuration>
+  <appSettings>
+    <add key="a" value="10"/>
+    <add key="b" value="20"/>
+    <add key="c" value="5"/>
+  </appSettings>
+</configuration>
+```
+
+### Cod (`Form1.cs`)
+```csharp
+using System;
+using System.Configuration;
+using System.Text;
+using System.Windows.Forms;
+using System.Xml;
+
+namespace Subiect_20
+{
+    public partial class Form1 : Form
+    {
+        int rezultatCalcul = 0;
+
+        public Form1() { InitializeComponent(); }
+
+        private void butonCalculeaza_Click(object sender, EventArgs e)
+        {
+            foreach (string key in ConfigurationManager.AppSettings)
+                rezultatCalcul += Int32.Parse(ConfigurationManager.AppSettings[key]);
+            rezultat.Text = "Rezultat: " + rezultatCalcul;
+            MessageBox.Show("Rezultat: " + rezultatCalcul);
+        }
+
+        private void butonSalvare_Click(object sender, EventArgs e)
+        {
+            XmlTextWriter w = new XmlTextWriter("rezultat.xml", Encoding.ASCII);
+            w.Formatting = Formatting.Indented;
+            w.WriteStartDocument();
+            w.WriteStartElement("rezultate");
+            w.WriteElementString("rezultat", rezultatCalcul.ToString());
+            w.WriteEndElement();
+            w.WriteEndDocument();
+            w.Close();
+            MessageBox.Show("Salvat in rezultat.xml.");
+        }
+    }
+}
+```
+
+**Necesar:** adauga referinta `System.Configuration`.
+
+---
+
+# Sfaturi finale
+
+- **Cele 3 categorii** de subiecte:
+  - **WinForms + algoritmi** (1, 2, 16, 17, 18, 19, 20)
+  - **Threads / asincron** (10, 11, 12, 13, 14, 15)
+  - **Comunicare distribuita** (3, 4, 5, 6, 7, 8, 9)
+- **Tipare frecvente:** `ParameterizedThreadStart`, `Thread.Join`, `lock`, `BeginReceive/EndReceive`, `XmlTextWriter`, `XmlDocument.Load`, `[Serializable]`, `MarshalByRefObject`, `[WebMethod]`, `[DllImport]`.
+- **La oral:** explica DE CE folosesti tehnologia (ex: MSMQ pentru cozi durabile intre procese, .NET Remoting pentru obiecte cu stare partajata pe server, BeginReceive pentru a nu bloca UI-ul).
+
+
+---
