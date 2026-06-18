@@ -1,0 +1,404 @@
+Lab 13-14 - TCP + Apache Spark (finnhub)
+Server TCP face cereri la finnhub.io, serializeaza (JSON) si trimite prin socket cate un element la cateva secunde; direct stream Spark preia si prelucreaza.
+13.1 Server Python -> Spark Kotlin: stiri (ziua curenta)
+Enunt
+Să se creeze în Python un server TCP care să facă o cerere pentru simbolurile companiilor cu acțiuni (vezi documentația: https://finnhub.io/docs/api#stock-symbols) și folosind aceste simboluri precum și API-ul de știri despre o companie (https://finnhub.io/docs/api#company-news) să trimită știrile din ziua curentă prin socket, câte o știre o dată la 3 secunde (pentru serializare/deserializare se pot utiliza funcțiile loads și dumps din modulul json din Python, iar în Kotlin se poate utiliza kotlinx.serialization https://github.com/Kotlin/kotlinx.serialization). De asemenea, se va implementa în Kotlin un flux de date direct (direct stream) utilizând framework-ul Apache Spark, care să preia datele de la serverul TCP și să le prelucreze astfel:
+
+se vor filtra acele știri a căror sursă este "Yahoo";
+
+
+se vor filtra acele știri al căror rezumat depășește 500 de caractere;
+
+
+pentru fiecare RDD în parte, se va afișa URL-ul corespunzător știrii, data și titlul.
+Există o limitare de 60 de apeluri / minut la fiecare cheie API. Se poate crea un cont pe platforma finnhub.io (https://finnhub.io/register), sau se poate utiliza următoarea cheie (token) API: brmr2kfrh5rcss140jmg
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Finn[finnhub.io] --> Py[server.py<br/>port 9999]
+    Py -->|JSON per 3s| Spk[SparkClient.kt]
+    Spk -->|filtru Yahoo + summary>500| Out[Console]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class server { +get_symbols() +get_news() }
+    class SparkClient { +main() }
+
+
+Fisiere
+server.py (NOU)
+
+
+
+Python
+import socket, requests, json, time
+from datetime import date
+
+API_KEY = "brmr2kfrh5rcss140jmg"
+
+def get_symbols():
+    r = requests.get(f"https://finnhub.io/api/v1/stock/symbol?exchange=US&token={API_KEY}")
+    return [s["symbol"] for s in r.json()[:20]]
+
+def get_news(symbol):
+    today = date.today().isoformat()
+    r = requests.get(f"https://finnhub.io/api/v1/company-news?symbol={symbol}&from={today}&to={today}&token={API_KEY}")
+    return r.json()
+
+srv = socket.socket(); srv.bind(("0.0.0.0", 9999)); srv.listen(1)
+print("Astept Spark...")
+conn, _ = srv.accept()
+print("Spark conectat!")
+
+for sym in get_symbols():
+    for news in get_news(sym):
+        conn.sendall((json.dumps(news) + "\n").encode())
+        time.sleep(3)
+
+
+SparkClient.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.Durations
+import org.apache.spark.streaming.api.java.JavaStreamingContext
+import org.json.JSONObject
+
+fun main() {
+    val conf = SparkConf().setMaster("local[2]").setAppName("News")
+    val ssc = JavaStreamingContext(conf, Durations.seconds(5))
+    val lines = ssc.socketTextStream("localhost", 9999)
+
+    lines.foreachRDD { rdd ->
+        rdd.collect().forEach { line ->
+            val j = JSONObject(line)
+            if (j.getString("source") == "Yahoo" && j.getString("summary").length > 500) {
+                println("URL: ${j.getString("url")}")
+                println("DATE: ${j.getLong("datetime")}")
+                println("TITLU: ${j.getString("headline")}")
+            }
+        }
+    }
+    ssc.start(); ssc.awaitTermination()
+}
+
+
+13.2 Profil companie (NYSE, IPO >= 2015)
+Enunt
+Server TCP Python: /stock-symbols + /company-profile2, trimite cate un profil la 3 s. Kotlin Spark: filtreaza companiile pe "NEW YORK STOCK EXCHANGE, INC."; filtreaza IPO din 2015 pana in prezent; per RDD afiseaza numele, telefonul, marketCapitalization. Cheie: brmr7v7rh5rcss140lq0.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Finn[finnhub.io<br/>/profile2] --> Py[server.py]
+    Py --> Spk[SparkClient.kt<br/>filtru NYSE + IPO>=2015]
+    Spk --> Out[Console]
+
+
+Fisiere
+server.py (NOU)
+
+
+
+Python
+import socket, requests, json, time
+API_KEY = "brmr7v7rh5rcss140lq0"
+
+def syms():
+    r = requests.get(f"https://finnhub.io/api/v1/stock/symbol?exchange=US&token={API_KEY}")
+    return [s["symbol"] for s in r.json()[:50]]
+
+def profile(sym):
+    return requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={sym}&token={API_KEY}").json()
+
+srv = socket.socket(); srv.bind(("0.0.0.0", 9999)); srv.listen(1); c,_ = srv.accept()
+for s in syms():
+    p = profile(s)
+    if p: c.sendall((json.dumps(p) + "\n").encode()); time.sleep(3)
+
+
+SparkClient.kt - filtreaza j.getString("exchange") == "NEW YORK STOCK EXCHANGE, INC." si IPO 2015+.
+14.1 Server Kotlin -> PySpark: stiri (ziua precedenta, PNG, URL < 80)
+Enunt
+Să se creeze în Kotlin un server TCP care să facă o cerere (khttp) pentru simbolurile companiilor cu acțiuni (vezi documentația: https://finnhub.io/docs/api#stock-symbols) și folosind aceste simboluri precum și API-ul de știri despre o companie (https://finnhub.io/docs/api#company-news) să trimită știrile din ziua precedentă prin socket, câte o știre o dată la 3 secunde (pentru serializare/deserializare se pot utiliza funcțiile loads și dumps din modulul json din Python, iar în Kotlin se poate utiliza kotlinx.serialization https://github.com/Kotlin/kotlinx.serialization). De asemenea, se va implementa în Python un flux de date direct (direct stream) utilizând framework-ul Apache Spark (PySpark), care să preia datele de la serverul TCP și să le prelucreze astfel:
+se vor filtra acele știri care folosesc o imagine PNG;
+se vor filtra acele știri al căror URL nu depășește 80 de caractere;
+pentru fiecare RDD în parte, se va afișa URL-ul corespunzător știrii, data și titlul.
+Există o limitare de 60 de apeluri / minut la fiecare cheie API. Se poate crea un cont pe platforma finnhub.io (https://finnhub.io/register), sau se poate utiliza următoarea cheie (token) API: brmrfu7rh5rcss140ogg
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Finn --> Kot[Server.kt khttp]
+    Kot --> PySpk[spark_client.py<br/>filtru PNG + url<80]
+
+
+Fisiere
+Server.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator
+
+import khttp.get
+import java.net.ServerSocket
+import java.time.LocalDate
+
+fun main() {
+    val key = "brmrfu7rh5rcss140ogg"
+    val yest = LocalDate.now().minusDays(1).toString()
+    val srv = ServerSocket(9999); val conn = srv.accept()
+    val syms = get("https://finnhub.io/api/v1/stock/symbol?exchange=US&token=$key").jsonArray
+    for (i in 0 until minOf(20, syms.length())) {
+        val sym = syms.getJSONObject(i).getString("symbol")
+        val news = get("https://finnhub.io/api/v1/company-news?symbol=$sym&from=$yest&to=$yest&token=$key").jsonArray
+        for (j in 0 until news.length()) {
+            conn.getOutputStream().write((news.getJSONObject(j).toString() + "\n").toByteArray())
+            Thread.sleep(3000)
+        }
+    }
+}
+
+
+spark_client.py (NOU)
+
+
+
+
+Python
+from pyspark import SparkContext
+from pyspark.streaming import StreamingContext
+import json
+
+sc = SparkContext("local[2]", "News"); sc.setLogLevel("ERROR")
+ssc = StreamingContext(sc, 5)
+lines = ssc.socketTextStream("localhost", 9999)
+
+def process(rdd):
+    for line in rdd.collect():
+        try:
+            j = json.loads(line)
+            if j.get("image", "").endswith(".png") and len(j.get("url", "")) < 80:
+                print(f"URL={j['url']} DATE={j['datetime']} TITLE={j['headline']}")
+        except: pass
+
+lines.foreachRDD(process)
+ssc.start(); ssc.awaitTermination()
+
+
+14.2 Preturi tinta, profit mediu > 40%
+Enunt
+Să se creeze în Kotlin un server TCP care să facă o cerere (khttp) pentru simbolurile companiilor cu acțiuni (vezi documentația: https://finnhub.io/docs/api#stock-symbols) și folosind aceste simboluri precum și API-ul de prețuri țintă (https://finnhub.io/docs/api#price-target) să trimită datele prin socket câte o companie (symbol) o dată la 3 secunde (pentru serializare/deserializare se pot utiliza funcțiile loads și dumps din modulul json din Python, iar în Kotlin se poate utiliza kotlinx.serialization https://github.com/Kotlin/kotlinx.serialization). De asemenea, se va implementa în Python un flux de date direct (direct stream) utilizând framework-ul Apache Spark (PySpark), care să preia datele de la serverul TCP și să le prelucreze astfel:
+
+se va calcula pentru acțiunile fiecărei companii profitul mediu care putea fi făcut în luna curentă, pe baza prețurilor estimate de analiști (targetMean și targetLow);
+se vor filtra rezultatele, păstrandu-le doar pe cele pentru care procentul de profit > 40%
+pentru fiecare RDD în parte, se va afișa compania (symbol) și profitul mediu.
+Există o limitare de 60 de apeluri / minut la fiecare cheie API. Se poate crea un cont pe platforma finnhub.io (https://finnhub.io/register), sau se poate utiliza următoarea cheie (token) API: brl7eb7rh5re1lvco7fg
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Finn[/price-target] --> Kot[Server.kt]
+    Kot --> Py[spark_client.py<br/>profit>40%]
+
+
+Fisiere
+Server.kt - similar 14.1, dar endpoint /api/v1/stock/price-target cu cheia brl7eb7rh5re1lvco7fg.
+spark_client.py:
+
+
+
+Python
+def process(rdd):
+    for line in rdd.collect():
+        j = json.loads(line)
+        mean = j.get("targetMean", 0); low = j.get("targetLow", 0)
+        if low > 0:
+            profit = (mean - low) / low * 100
+            if profit > 40:
+                print(f"SYMBOL={j['symbol']} PROFIT={profit:.2f}%")
+
+
+14.3 Server Kotlin -> Spark: analiza de sentimente (AAPL, 2 saptamani)
+Enunt
+Să se creeze un server TCP în Kotlin care să facă o cerere la un API de știri (de exemplu: https://finnhub.io/docs/api#company-news) pentru o anumită companie (ex.: Apple - APPL) și să trimită știrile din ultimele 2 săptămâni prin socket câte o știre o dată la 5 secunde și utilizând Spark Streaming și Spark RDD, să se creeze un stream direct ce va prelucra știrile astfel încât să realizeze o analiză statistică de sentimente pe baza a două fișiere text ce conțin cuvinte pozitive/negative (încărcate în aplicație ca RDD-uri) - ca la tema laboratorului 14. Rezultatul clasificării fiecărei știri (pozitiv/negativ/neutru) va fi afișat la consolă. Fișierele de cuvinte pot fi descărcate din arhiva cu exemple de la laboratorul 14 (http://mike.tuiasi.ro/labsd14.zip).
+Există o limitare de 60 de apeluri / minut la fiecare cheie API. Se poate crea un cont pe platforma finnhub.io (https://finnhub.io/register), sau se poate utiliza următoarea cheie (token) API: brmu7ovrh5r90ebn6jrg
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Finn -->|news AAPL 2 sapt| Kot[Server.kt]
+    Kot --> Spk[SentimentClient.kt]
+    Pos[positive.txt] --> Spk
+    Neg[negative.txt] --> Spk
+    Spk --> Out[POZ/NEG/NEUTRU]
+
+
+Fisiere
+positive.txt, negative.txt (NOU - cuvinte din labsd14.zip)
+Server.kt:
+
+
+
+Kotlin
+val key = "brmu7ovrh5r90ebn6jrg"
+val from = LocalDate.now().minusWeeks(2).toString()
+val to = LocalDate.now().toString()
+val news = get("https://finnhub.io/api/v1/company-news?symbol=AAPL&from=$from&to=$to&token=$key").jsonArray
+for (i in 0 until news.length()) {
+    conn.getOutputStream().write((news.getJSONObject(i).toString() + "\n").toByteArray())
+    Thread.sleep(5000)
+}
+
+
+SentimentClient.kt (NOU)
+
+
+
+
+Kotlin
+val pos = sc.textFile("positive.txt").collect().toSet()
+val neg = sc.textFile("negative.txt").collect().toSet()
+
+lines.foreachRDD { rdd ->
+    rdd.collect().forEach { line ->
+        val j = JSONObject(line)
+        val text = (j.getString("headline") + " " + j.getString("summary")).lowercase()
+        val words = text.split(Regex("\\W+"))
+        val p = words.count { it in pos }; val n = words.count { it in neg }
+        val sentiment = when { p > n -> "POZ"; n > p -> "NEG"; else -> "NEUTRU" }
+        println("[$sentiment] ${j.getString("headline")}")
+    }
+}
+
+
+14.4 Server Python -> Spark: analiza de sentimente
+Enunt
+Să se creeze un server TCP în Python care să facă o cerere la un API de știri (de exemplu: https://finnhub.io/docs/api#company-news) pentru o anumită companie (ex.: Apple - APPL) și să trimită știrile din ultimele 2 săptămâni prin socket câte o știre o dată la 5 secunde și utilizând Spark Streaming și Spark RDD, să se creeze un stream direct ce va prelucra știrile astfel încât să realizeze o analiză statistică de sentimente pe baza a două fișiere text ce conțin cuvinte pozitive/negative (încărcate în aplicație ca RDD-uri) - ca la tema laboratorului 14. Rezultatul clasificării fiecărei știri (pozitiv/negativ/neutru) va fi afișat la consolă. Fișierele de cuvinte pot fi descărcate din arhiva cu exemple de la laboratorul 14 (http://mike.tuiasi.ro/labsd14.zip).
+Există o limitare de 60 de apeluri / minut la fiecare cheie API. Se poate crea un cont pe platforma finnhub.io (https://finnhub.io/register), sau se poate utiliza următoarea cheie (token) API: brmu4j7rh5r90ebn6irg
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Finn --> Py[server.py]
+    Py --> Spk[spark_client.py + positive/negative]
+    Spk --> Out
+
+
+Fisiere
+server.py - identic cu 13.1 dar AAPL, 2 saptamani.
+spark_client.py:
+
+
+
+Python
+pos = set(open("positive.txt").read().split())
+neg = set(open("negative.txt").read().split())
+
+def process(rdd):
+    for line in rdd.collect():
+        j = json.loads(line)
+        text = (j["headline"] + " " + j["summary"]).lower()
+        words = re.findall(r"\w+", text)
+        p = sum(1 for w in words if w in pos)
+        n = sum(1 for w in words if w in neg)
+        s = "POZ" if p > n else "NEG" if n > p else "NEUTRU"
+        print(f"[{s}] {j['headline']}")
+
+
+14.5 Sentimente -> microserviciu WEB de vizualizare
+Enunt
+Ca 14.3, dar rezultatul clasificarii e trimis unui microserviciu WEB care permite vizualizarea in navigator.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Spk[SentimentClient] -->|POST /add| Web[Spring WebApp<br/>port 8080]
+    Browser -->|GET /view| Web
+    Web --> HTML[HTML tabel]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class SentimentController { -results: List +add() +view() }
+
+
+Fisiere
+WebApp/src/main/kotlin/com/sd/laborator/SentimentController.kt (NOU)
+
+
+
+Kotlin
+@Controller
+class SentimentController {
+    private val results = mutableListOf<Triple<String, String, String>>()
+
+    @PostMapping("/add")
+    @ResponseBody
+    fun add(@RequestBody body: Map<String, String>): String {
+        results.add(Triple(body["sentiment"]!!, body["title"]!!, body["url"]!!))
+        return "OK"
+    }
+
+    @GetMapping("/view")
+    @ResponseBody
+    fun view(): String {
+        val rows = results.joinToString("") { (s, t, u) ->
+            "<tr><td>$s</td><td>$t</td><td><a href='$u'>link</a></td></tr>"
+        }
+        return "<html><body><table border=1>$rows</table></body></html>"
+    }
+}
+
+
+Modifica SentimentClient.kt - dupa clasificare, POST la http://localhost:8080/add:
+
+
+
+Kotlin
+khttp.post("http://localhost:8080/add", json = mapOf(
+    "sentiment" to sentiment, "title" to j.getString("headline"), "url" to j.getString("url")
+))
+
+
+Sfaturi finale pentru examen
+Diagrama de servicii = cutii (microservicii) cu sageti (TCP/REST/Kafka/RabbitMQ). Subliniaza "fiecare in masina lui virtuala".
+Diagrama de clase = pentru fiecare microserviciu desenezi clasele importante cu metode publice si dependentele (interfata <-implementeaza- clasa). Subliniaza ISP, DIP.
+Apararea SOLID:
+SRP: o clasa = o responsabilitate (filtru, cache, log etc.)
+OCP: adaugi un Logger fara sa modifici BeerAdderService (decorator)
+LSP: orice IBeerAdder poate fi inlocuit cu LoggingBeerAdderService
+ISP: am spart IBeerService in 4 interfete mici
+DIP: controller-ul depinde de IBeerAdder, nu de implementare
+Daca pica o varianta neacoperita: combini ce ai mai sus (pattern-uri: cache pe disc + filtru + dirijor + replicator + observator + decorator + gateway).
