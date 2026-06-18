@@ -1,0 +1,302 @@
+Lab 7 - Okazii (licitatie, Kotlin)
+Microservicii: AuctioneerMicroservice, BidderMicroservice, BiddingProcessorMicroservice, MessageProcessorMicroservice + MessageLibrary (Message).
+Ordine de pornire: intai MessageProcessor + BiddingProcessor, apoi Auctioneer (inchide licitatia dupa ~15 s), apoi cativa Bidder.
+7.1 Evaluari 1-5 ale serviciului
+Enunt
+Pornind de la aplicația exemplu cu Okazii (simulat evident) din laboratorul 7, să se modifice aceasta astfel încât să permită primirea de evaluari între 1-5 privind calitatea serviciului și să salveze numele utilizatorului și evaluarea într-un fișier local.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    B[BidderMicroservice] -->|rezultat| A[AuctioneerMicroservice]
+    B -->|TCP port 1800<br/>rating| RP[RatingProcessorMicroservice]
+    RP -->|append| File[ratings.txt]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class RatingProcessorMicroservice { -socket: ServerSocket +run() }
+    class Message { +sender +body +timestamp }
+    RatingProcessorMicroservice --> Message
+
+
+Fisiere noi
+RatingProcessorMicroservice/src/RatingProcessorMicroservice.kt (NOU)
+
+
+
+Kotlin
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import kotlin.concurrent.thread
+
+class RatingProcessorMicroservice {
+    private val socket = ServerSocket(1800)
+
+    fun run() {
+        println("RatingProcessor pe portul 1800")
+        while (true) {
+            val c = socket.accept()
+            thread {
+                val br = BufferedReader(InputStreamReader(c.inputStream))
+                val msg = Message.deserialize(br.readLine().toByteArray())
+                val (_, ratingStr) = msg.body.split(" ", limit = 2)
+                val rating = ratingStr.toIntOrNull()
+                if (rating != null && rating in 1..5) {
+                    File("ratings.txt").appendText("${msg.sender}\t$rating\n")
+                    println("Salvat: ${msg.sender} -> $rating")
+                } else {
+                    println("Rating invalid: $ratingStr")
+                }
+                c.close()
+            }
+        }
+    }
+}
+
+fun main() = RatingProcessorMicroservice().run()
+
+
+Modifica BidderMicroservice.kt:
+
+
+
+Kotlin
+// dupa waitForResult(), in run():
+val ratingSocket = java.net.Socket("localhost", 1800)
+val rating = (1..5).random()
+val ratingMsg = Message.create("Bidder-$myIdentity", "rating $rating")
+ratingSocket.getOutputStream().write(ratingMsg.serialize())
+ratingSocket.close()
+
+
+7.2 Statistici numar de mesaje pana la adjudecare
+Enunt
+Pornind de la aplicația exemplu cu Okazii (simulat evident) din laboratorul 7, să se modifice aceasta astfel încât să se introducă un procesor de flux care să realizeze statistici cu privire la numărul de mesaje care au fost necesare pentru o licitație până la adjudecare și apoi să scrie aceste informații într-un fișier local.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    A[AuctioneerMicroservice] --> Cnt[NumberOfMessagesMicroservice<br/>port 1900]
+    A --> MP[MessageProcessor]
+    MP --> BP[BiddingProcessor]
+    Cnt --> File[statistica.txt]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class NumberOfMessagesMicroservice { -count: Int -socket: ServerSocket +run() }
+
+
+Fisiere noi
+NumberOfMessagesMicroservice/src/NumberOfMessagesMicroservice.kt (NOU)
+
+
+
+Kotlin
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+import java.net.ServerSocket
+
+class NumberOfMessagesMicroservice {
+    companion object { const val PORT = 1900 }
+    private val socket = ServerSocket(PORT)
+    private var count = 0
+
+    fun run() {
+        println("Counter pe portul $PORT")
+        val conn = socket.accept()
+        val br = BufferedReader(InputStreamReader(conn.inputStream))
+        while (true) {
+            val line = br.readLine() ?: break
+            count++
+            if (Message.deserialize(line.toByteArray()).body == "final") break
+        }
+        File("statistica.txt").appendText("Licitatie ${System.currentTimeMillis()}: $count mesaje\n")
+        println("Numar total: $count")
+    }
+}
+
+fun main() = NumberOfMessagesMicroservice().run()
+
+
+Modifica AuctioneerMicroservice.kt - in forwardBids(), deschide socket catre 1900 si trimite copie a fiecarui mesaj.
+7.3 Discutie privata intre ofertanti (master + comunicatie replicat)
+Enunt
+Procesor de flux care, impreuna cu alte microservicii, initiaza o discutie privata intre cativa utilizatori care liciteaza. Necesita cel putin un procesor master si unul de comunicatie replicat per utilizator.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    C1[ChatClient Alice] -->|register| Master[ChatMaster<br/>port 2000]
+    C2[ChatClient Bob] -->|register| Master
+    C3[ChatClient Eve] -->|register| Master
+    Master -->|routeaza| C1
+    Master -->|routeaza| C2
+    Master -->|routeaza| C3
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class ChatMasterMicroservice { -clients: Map~String, Socket~ +run() }
+    class ChatClientMicroservice { -name: String -sock: Socket }
+    ChatMasterMicroservice --> Message
+    ChatClientMicroservice --> Message
+
+
+Fisiere noi
+ChatMasterMicroservice/src/ChatMasterMicroservice.kt (NOU)
+
+
+
+Kotlin
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import java.net.Socket
+import kotlin.concurrent.thread
+
+class ChatMasterMicroservice {
+    private val clients = mutableMapOf<String, Socket>()
+    private val socket = ServerSocket(2000)
+
+    fun run() {
+        println("ChatMaster pe portul 2000")
+        while (true) {
+            val c = socket.accept()
+            thread {
+                val br = BufferedReader(InputStreamReader(c.inputStream))
+                val regLine = br.readLine() ?: return@thread
+                val regMsg = Message.deserialize(regLine.toByteArray())
+                synchronized(clients) { clients[regMsg.sender] = c }
+
+                while (true) {
+                    val line = br.readLine() ?: break
+                    val m = Message.deserialize(line.toByteArray())
+                    val (_, dest, text) = m.body.split(" ", limit = 3)
+                    clients[dest]?.getOutputStream()?.write(Message.create(m.sender, text).serialize())
+                }
+            }
+        }
+    }
+}
+
+fun main() = ChatMasterMicroservice().run()
+
+
+ChatClientMicroservice/src/ChatClientMicroservice.kt (NOU)
+
+
+
+Kotlin
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.Socket
+import kotlin.concurrent.thread
+
+fun main(args: Array<String>) {
+    val name = args[0]
+    val sock = Socket("localhost", 2000)
+    sock.getOutputStream().write(Message.create(name, "register").serialize())
+
+    thread {
+        val br = BufferedReader(InputStreamReader(sock.inputStream))
+        while (true) { val l = br.readLine() ?: break; println(Message.deserialize(l.toByteArray())) }
+    }
+
+    while (true) {
+        val l = readLine() ?: break
+        sock.getOutputStream().write(Message.create(name, "to $l").serialize())
+    }
+}
+
+
+7.4 Monitorizare procese + cozi + SQLite
+Enunt
+Procesor de flux ca microserviciu separat care monitorizeaza operatiile celorlalte procesoare; trimite mesajele care trec prin el catre un sistem de cozi; cozile se organizeaza folosind ontologii intr-o BD SQLite; fiecare microserviciu in masina lui virtuala.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    A[Auctioneer] --> Mon[MonitorMicroservice<br/>port 2100]
+    MP[MessageProcessor] --> Mon
+    BP[BiddingProcessor] --> Mon
+    Mon --> DB[(SQLite<br/>monitor.db)]
+    Mon --> Q[RabbitMQ<br/>monitor queue]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class MonitorMicroservice { -db -rabbit -socket +run() }
+    MonitorMicroservice --> Message
+
+
+Fisiere noi
+MonitorMicroservice/src/MonitorMicroservice.kt (NOU)
+
+
+
+Kotlin
+import com.rabbitmq.client.ConnectionFactory
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
+import java.sql.DriverManager
+
+class MonitorMicroservice {
+    private val socket = ServerSocket(2100)
+    private val db = DriverManager.getConnection("jdbc:sqlite:monitor.db")
+    private val rabbit = ConnectionFactory().apply { host = "localhost" }.newConnection().createChannel()
+
+    init {
+        db.createStatement().execute("CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, sender TEXT, body TEXT)")
+        rabbit.queueDeclare("monitor", true, false, false, null)
+    }
+
+    fun run() {
+        while (true) {
+            val c = socket.accept()
+            val br = BufferedReader(InputStreamReader(c.inputStream))
+            val line = br.readLine() ?: continue
+            val m = Message.deserialize(line.toByteArray())
+            db.prepareStatement("INSERT INTO events(sender,body) VALUES(?,?)").apply {
+                setString(1, m.sender); setString(2, m.body); execute()
+            }
+            rabbit.basicPublish("", "monitor", null, line.toByteArray())
+        }
+    }
+}
+
+fun main() = MonitorMicroservice().run()
+
