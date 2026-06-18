@@ -1,0 +1,472 @@
+Lab 5 - Spring REST
+5.1 Cache 30 minute (agenda REST)
+Enunt
+Pornind de la exemplul de implementare a agendei cu servicii REST din laborator: sa se deseneze diagrama de clase; sa se implementeze un serviciu (cu sau fara model poarta API) care asigura o metoda de cache ce raspunde daca noua cerere apare in primele 30 de minute.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Client[Client HTTP] -->|GET /agenda/get/Ana| Controller[AgendaController<br/>poarta API]
+    Controller -->|verifica| Cache[CacheService<br/>TTL 30 min]
+    Controller -->|miss| Agenda[AgendaService<br/>logica business]
+    Cache -.->|hit| Controller
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IAgendaService { <<interface>> +addPerson(Person) +getPerson(String) Person }
+    class ICacheService { <<interface>> +get(String) String +put(String, String) }
+    class AgendaService { +addPerson() +getPerson() }
+    class CacheService { -store: Map +get() +put() }
+    class AgendaController { -agenda: IAgendaService -cache: ICacheService +add() +get() }
+    class Person { +name: String +phone: String }
+    IAgendaService <|.. AgendaService
+    ICacheService <|.. CacheService
+    AgendaController --> IAgendaService
+    AgendaController --> ICacheService
+    AgendaService --> Person
+
+
+Proiect baza: copiezi labsd05\SD_Laborator_05\exemplul_2\LibraryApp -> redenumesti in AgendaApp.
+Fisiere de adaugat / modificat
+src/main/kotlin/com/sd/laborator/pojo/Person.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.pojo
+
+data class Person(val name: String, val phone: String)
+
+
+src/main/kotlin/com/sd/laborator/interfaces/IAgendaService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+
+import com.sd.laborator.pojo.Person
+
+interface IAgendaService {
+    fun addPerson(person: Person): String
+    fun getPerson(name: String): Person?
+    fun getAll(): List<Person>
+}
+
+
+src/main/kotlin/com/sd/laborator/interfaces/ICacheService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+
+interface ICacheService {
+    fun get(key: String): String?
+    fun put(key: String, value: String)
+}
+
+
+src/main/kotlin/com/sd/laborator/services/AgendaService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.IAgendaService
+import com.sd.laborator.pojo.Person
+import org.springframework.stereotype.Service
+
+@Service
+class AgendaService : IAgendaService {
+    private val people = mutableListOf<Person>()
+    override fun addPerson(person: Person): String { people.add(person); return "OK" }
+    override fun getPerson(name: String): Person? = people.find { it.name == name }
+    override fun getAll(): List<Person> = people
+}
+
+
+src/main/kotlin/com/sd/laborator/services/CacheService.kt (NOU - cache cu TTL 30 min)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.ICacheService
+import org.springframework.stereotype.Service
+import java.util.concurrent.ConcurrentHashMap
+
+@Service
+class CacheService : ICacheService {
+    private data class Entry(val value: String, val timestamp: Long)
+    private val store = ConcurrentHashMap<String, Entry>()
+    private val ttlMs = 30 * 60 * 1000L  // 30 minute
+
+    override fun get(key: String): String? {
+        val e = store[key] ?: return null
+        if (System.currentTimeMillis() - e.timestamp > ttlMs) {
+            store.remove(key); return null
+        }
+        return e.value
+    }
+
+    override fun put(key: String, value: String) {
+        store[key] = Entry(value, System.currentTimeMillis())
+    }
+}
+
+
+src/main/kotlin/com/sd/laborator/controllers/AgendaController.kt (NOU - poarta API)
+
+
+
+Kotlin
+package com.sd.laborator.controllers
+
+import com.sd.laborator.interfaces.IAgendaService
+import com.sd.laborator.interfaces.ICacheService
+import com.sd.laborator.pojo.Person
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.web.bind.annotation.*
+
+@RestController
+@RequestMapping("/agenda")
+class AgendaController {
+    @Autowired private lateinit var agenda: IAgendaService
+    @Autowired private lateinit var cache: ICacheService
+
+    @PostMapping("/add")
+    fun add(@RequestBody p: Person): String = agenda.addPerson(p)
+
+    @GetMapping("/get/{name}")
+    fun get(@PathVariable name: String): String {
+        val hit = cache.get(name)
+        if (hit != null) return "[CACHE HIT] $hit"
+        val person = agenda.getPerson(name) ?: return "Nu exista"
+        val result = person.toString()
+        cache.put(name, result)
+        return "[CACHE MISS] $result"
+    }
+}
+
+
+Modifica LibraryApp.kt -> AgendaApp.kt: schimba doar numele clasei.
+Pasi rulare
+
+
+
+mvn spring-boot:run
+curl -X POST localhost:8080/agenda/add -H "Content-Type: application/json" -d '{"name":"Ana","phone":"0712"}'
+curl localhost:8080/agenda/get/Ana   # MISS
+curl localhost:8080/agenda/get/Ana   # HIT (sub 30 min)
+
+
+5.2 Cache 30 min + replicare cu cache global (gestiune cheltuieli familie)
+Enunt
+Pornind de la tema pe acasă care se referea la crearea unei aplicații REST pentru gestiunea cheltuielilor unei familii (laboratorul 5), să se realizeze următoarele:
+să se deseneze diagrama de clase;
+să se implementeze un serviciu (utilizând modelul porții API sau nu) care asigură o metodă de cache ce răspunde dacă noua cerere apare în primele 30 de minute
+să se implementeze un serviciu de replicare care multiplică serviciile respective și va combina toate cache-urile serviciilor replicate într-unul global;
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului.
+Se va utiliza orchestrarea și respectarea principiilor SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    Client[Client] --> Gateway[ExpenseController]
+    Gateway --> Global[GlobalCacheService<br/>agregator]
+    Global --> Cache1[CacheService #1]
+    Global --> Cache2[CacheService #2]
+    Global --> Cache3[CacheService #3]
+    Gateway --> Repl1[ExpenseService #1]
+    Gateway --> Repl2[ExpenseService #2]
+    Gateway --> Repl3[ExpenseService #3]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IExpenseService { <<interface>> +add(Expense) +getByMember(String) }
+    class ICacheService { <<interface>> +get(String) +put(String, String) }
+    class ExpenseService { @Scope("prototype") }
+    class CacheService
+    class GlobalCacheService { -replicas: List~CacheService~ +get() +put() }
+    class ReplicationConfig { +cache1() +cache2() +cache3() }
+    class ExpenseController
+    IExpenseService <|.. ExpenseService
+    ICacheService <|.. CacheService
+    ICacheService <|.. GlobalCacheService
+    GlobalCacheService o-- CacheService
+    ExpenseController --> GlobalCacheService
+
+
+Fisiere noi (suplimentar fata de 5.1)
+src/main/kotlin/com/sd/laborator/pojo/Expense.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.pojo
+data class Expense(val member: String, val category: String, val amount: Double)
+
+
+src/main/kotlin/com/sd/laborator/interfaces/IExpenseService.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+import com.sd.laborator.pojo.Expense
+interface IExpenseService {
+    fun add(e: Expense)
+    fun getByMember(member: String): List<Expense>
+}
+
+
+src/main/kotlin/com/sd/laborator/services/ExpenseService.kt (NOU)
+
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.IExpenseService
+import com.sd.laborator.pojo.Expense
+import org.springframework.context.annotation.Scope
+import org.springframework.stereotype.Service
+
+@Service
+@Scope("prototype")  // de fiecare data cand e injectat -> instanta noua = replica
+class ExpenseService : IExpenseService {
+    private val items = mutableListOf<Expense>()
+    override fun add(e: Expense) { items.add(e) }
+    override fun getByMember(m: String) = items.filter { it.member == m }
+}
+
+
+src/main/kotlin/com/sd/laborator/services/GlobalCacheService.kt (NOU - cache global care agrega cache-urile locale)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.sd.laborator.interfaces.ICacheService
+import org.springframework.stereotype.Service
+
+@Service
+class GlobalCacheService(private val replicas: List<CacheService>) : ICacheService {
+    override fun get(key: String): String? {
+        for (r in replicas) {
+            val hit = r.get(key)
+            if (hit != null) return hit
+        }
+        return null
+    }
+    override fun put(key: String, value: String) {
+        replicas.forEach { it.put(key, value) }  // consistenta tare
+    }
+}
+
+
+src/main/kotlin/com/sd/laborator/config/ReplicationConfig.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.config
+
+import com.sd.laborator.services.CacheService
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+
+@Configuration
+class ReplicationConfig {
+    @Bean fun cache1() = CacheService()
+    @Bean fun cache2() = CacheService()
+    @Bean fun cache3() = CacheService()
+    @Bean fun caches(c1: CacheService, c2: CacheService, c3: CacheService) = listOf(c1, c2, c3)
+}
+
+
+src/main/kotlin/com/sd/laborator/controllers/ExpenseController.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.controllers
+
+import com.sd.laborator.interfaces.IExpenseService
+import com.sd.laborator.services.GlobalCacheService
+import com.sd.laborator.pojo.Expense
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.web.bind.annotation.*
+
+@RestController
+@RequestMapping("/expense")
+class ExpenseController {
+    @Autowired private lateinit var svc: IExpenseService
+    @Autowired private lateinit var cache: GlobalCacheService
+
+    @PostMapping("/add")
+    fun add(@RequestBody e: Expense): String { svc.add(e); return "OK" }
+
+    @GetMapping("/get/{m}")
+    fun get(@PathVariable m: String): String {
+        cache.get(m)?.let { return "[CACHE] $it" }
+        val res = svc.getByMember(m).toString()
+        cache.put(m, res); return "[DB] $res"
+    }
+}
+
+
+5.3 Producatori multipli / Consumatori multipli
+Enunt
+Problema producatori multipli / consumatori multipli: o clasa Chelner (Producer) cu un identificator si o clasa Bucatar (Consumer) cu un identificator. Bonus: alt framework de cozi (ex. ActiveMQ sau QMQ).
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    Ch1[Chelner #1] --> Q[Coada RabbitMQ<br/>comenzi]
+    Ch2[Chelner #2] --> Q
+    Q --> B1[Bucatar #1]
+    Q --> B2[Bucatar #2]
+    Q --> B3[Bucatar #3]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class IChelner { <<interface>> +preiaComanda() String }
+    class IBucatar { <<interface>> +gateste(String) }
+    class Chelner { -id: Int +preiaComanda() }
+    class Bucatar { -id: Int +gateste() +start() }
+    class AppConfig { @Bean rabbit() chelner1() chelner2() bucatar1() bucatar2() bucatar3() }
+    IChelner <|.. Chelner
+    IBucatar <|.. Bucatar
+    AppConfig --> Chelner
+    AppConfig --> Bucatar
+
+
+Proiect baza: copiezi labsd05\SD_Laborator_05\exemplul_1\StackApp.
+Fisiere noi
+src/main/kotlin/com/sd/laborator/interfaces/IChelner.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+interface IChelner { fun preiaComanda(): String }
+
+
+src/main/kotlin/com/sd/laborator/interfaces/IBucatar.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.interfaces
+interface IBucatar { fun gateste(comanda: String) }
+
+
+src/main/kotlin/com/sd/laborator/services/Chelner.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.rabbitmq.client.ConnectionFactory
+import com.sd.laborator.interfaces.IChelner
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.stereotype.Service
+
+@Service
+class Chelner(
+    val id: Int,
+    @Qualifier("rabbitFactory") private val factory: ConnectionFactory
+) : IChelner {
+    override fun preiaComanda(): String {
+        val comanda = "Chelner-$id: pizza ${System.currentTimeMillis()}"
+        factory.newConnection().use { conn ->
+            conn.createChannel().use { ch ->
+                ch.queueDeclare("comenzi", true, false, false, null)
+                ch.basicPublish("", "comenzi", null, comanda.toByteArray())
+            }
+        }
+        return comanda
+    }
+}
+
+
+src/main/kotlin/com/sd/laborator/services/Bucatar.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.services
+
+import com.rabbitmq.client.*
+import com.sd.laborator.interfaces.IBucatar
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.stereotype.Service
+
+@Service
+class Bucatar(
+    val id: Int,
+    @Qualifier("rabbitFactory") private val factory: ConnectionFactory
+) : IBucatar {
+    override fun gateste(comanda: String) { println("Bucatar-$id gateste: $comanda") }
+
+    fun start() {
+        val conn = factory.newConnection()
+        val ch = conn.createChannel()
+        ch.queueDeclare("comenzi", true, false, false, null)
+        ch.basicQos(1)
+        val cb = DeliverCallback { _, d -> gateste(String(d.body)); ch.basicAck(d.envelope.deliveryTag, false) }
+        ch.basicConsume("comenzi", false, cb) { _ -> }
+    }
+}
+
+
+src/main/kotlin/com/sd/laborator/config/AppConfig.kt (NOU)
+
+
+
+Kotlin
+package com.sd.laborator.config
+
+import com.rabbitmq.client.ConnectionFactory
+import com.sd.laborator.services.Bucatar
+import com.sd.laborator.services.Chelner
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+
+@Configuration
+class AppConfig {
+    @Bean("rabbitFactory") fun rabbit() = ConnectionFactory().apply { host = "localhost" }
+    @Bean fun chelner1(f: ConnectionFactory) = Chelner(1, f)
+    @Bean fun chelner2(f: ConnectionFactory) = Chelner(2, f)
+    @Bean fun bucatar1(f: ConnectionFactory) = Bucatar(1, f).also { it.start() }
+    @Bean fun bucatar2(f: ConnectionFactory) = Bucatar(2, f).also { it.start() }
+    @Bean fun bucatar3(f: ConnectionFactory) = Bucatar(3, f).also { it.start() }
+}
