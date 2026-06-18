@@ -1,0 +1,313 @@
+Modifica PortFilterMicroservice - pe ACCEPT, deschide socket si catre 2200.
+Lab 10 - Microservicii Python + RabbitMQ
+Aceeasi licitatie ca la Lab 7, dar rescrisa in Python cu comunicare prin RabbitMQ.
+10.1 Statistici erori
+Enunt
+Pornind de la aplicația exemplu din laboratorul 10, să se modifice aceasta astfel încât să se introducă un procesor de flux care să realizeze statistici cu privire la erorile (posibile surse: cele de comunicare, cele de la sistemul de cozi) și tipul acestora care au apărut (dacă au apărut) pentru o licitație până la adjudecare și apoi să scrie aceste informații într-un fișier local. Se vor utiliza microservicii Python și o comunicare prin RabbitMQ.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    A[Auctioneer] -->|exception| ERR[(coada errors)]
+    B[Bidder] -->|exception| ERR
+    MP[MessageProcessor] -->|exception| ERR
+    BP[BiddingProcessor] -->|exception| ERR
+    ERR --> EP[ErrorProcessor]
+    EP --> File[errors.txt]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class ErrorProcessor { -conn -ch -stats +on_msg() +run() }
+
+
+Fisiere noi
+Okazii_v2/ErrorProcessor.py (NOU)
+
+
+
+Python
+import pika, datetime
+
+class ErrorProcessor:
+    def __init__(self):
+        self.conn = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+        self.ch = self.conn.channel()
+        self.ch.queue_declare(queue="errors")
+        self.stats = {}
+
+    def on_msg(self, ch, method, props, body):
+        err_type = body.decode().split("|")[0]
+        self.stats[err_type] = self.stats.get(err_type, 0) + 1
+        with open("errors.txt", "a") as f:
+            f.write(f"{datetime.datetime.now()}\t{body.decode()}\n")
+        print("Stats:", self.stats)
+
+    def run(self):
+        self.ch.basic_consume(queue="errors", on_message_callback=self.on_msg, auto_ack=True)
+        self.ch.start_consuming()
+
+if __name__ == "__main__":
+    ErrorProcessor().run()
+
+
+Modifica fiecare microserviciu - in try/except, publica eroarea pe coada errors:
+
+
+
+Python
+except Exception as e:
+    ch.basic_publish(exchange="", routing_key="errors", body=f"{type(e).__name__}|{str(e)}".encode())
+
+
+10.2 Monitorizare operatii (jurnal local) - Logger
+Enunt
+Pornind de la aplicația exemplu din laboratorul 10, să se modifice aceasta astfel încât să se introducă un procesor de flux care să monitorizeze toate operațiile efectuate de celelalte procesoare de flux în sensul scrierii într-un jurnal local. Se vor utiliza microservicii Python și o comunicare prin RabbitMQ.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    A[Auctioneer] --> X1[Exchange fanout<br/>topic_oferte_fanout]
+    MP[MessageProcessor] --> X2[Exchange fanout<br/>topic_oferte_procesate_fanout]
+    BP[BiddingProcessor] --> X3[Exchange fanout<br/>topic_rezultat_fanout]
+    X1 --> LP[LoggerProcessor]
+    X2 --> LP
+    X3 --> LP
+    LP --> Log[application_log.log]
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class LoggerProcessor { -QUEUES +log() +run() }
+
+
+Fisiere noi
+Okazii_v2/LoggerProcessor.py (NOU)
+
+
+
+Python
+import pika, datetime
+
+class LoggerProcessor:
+    QUEUES = ["topic_oferte", "topic_rezultat", "topic_oferte_procesate", "topic_notificare_procesor_mesaje"]
+
+    def __init__(self):
+        self.conn = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+        self.ch = self.conn.channel()
+        for q in self.QUEUES:
+            self.ch.exchange_declare(exchange=f"{q}_fanout", exchange_type="fanout")
+            res = self.ch.queue_declare("", exclusive=True)
+            self.ch.queue_bind(exchange=f"{q}_fanout", queue=res.method.queue)
+            self.ch.basic_consume(queue=res.method.queue,
+                on_message_callback=lambda c,m,p,b,qn=q: self.log(qn, b), auto_ack=True)
+
+    def log(self, queue, body):
+        with open("application_log.log", "a") as f:
+            f.write(f"{datetime.datetime.now()}\t[{queue}]\t{body}\n")
+        print(f"[{queue}] {body}")
+
+    def run(self): self.ch.start_consuming()
+
+if __name__ == "__main__":
+    LoggerProcessor().run()
+
+
+Modifica producatorii sa publice si pe exchange-ul fanout corespunzator.
+
+10.3 Discutie privata (master + comunicatie replicat) - RabbitMQ
+Enunt
+Pornind de la aplicația exemplu din laboratorul 10, să se modifice aceasta astfel încât să se introducă un procesor de flux care să permită împreună cu alte microservicii (care vor trebui eventual create) să se inițieze o discuție privată între câțiva utilizatori (deci ne mai trebuie cel puțin un procesor master și unul de comunicație replicat pentru fiecare utilizator). Se vor utiliza microservicii Python și o comunicare prin RabbitMQ.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph TB
+    C1[ChatClient Alice] -->|chat_inbox| Master[ChatMaster]
+    C2[ChatClient Bob] -->|chat_inbox| Master
+    Master -->|chat_Alice| C1
+    Master -->|chat_Bob| C2
+
+
+Diagrama de clase
+
+
+
+Fragment de cod
+classDiagram
+    class ChatMaster { +on_msg() +run() }
+    class ChatClient { -name -ch }
+
+
+Fisiere noi
+Okazii_v2/ChatMaster.py (NOU)
+
+
+
+Python
+import pika
+
+class ChatMaster:
+    def __init__(self):
+        self.conn = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+        self.ch = self.conn.channel()
+        self.ch.queue_declare(queue="chat_inbox")
+
+    def on_msg(self, ch, m, p, body):
+        sender, recv, text = body.decode().split("|")
+        ch.queue_declare(queue=f"chat_{recv}")
+        ch.basic_publish(exchange="", routing_key=f"chat_{recv}", body=f"{sender}: {text}".encode())
+
+    def run(self):
+        self.ch.basic_consume(queue="chat_inbox", on_message_callback=self.on_msg, auto_ack=True)
+        self.ch.start_consuming()
+
+if __name__ == "__main__":
+    ChatMaster().run()
+
+
+Okazii_v2/ChatClient.py (NOU)
+
+
+
+Python
+import pika, sys, threading
+
+name = sys.argv[1]
+conn = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+ch = conn.channel()
+ch.queue_declare(queue=f"chat_{name}")
+
+def listen():
+    for m, p, body in ch.consume(f"chat_{name}", auto_ack=True):
+        print(body.decode())
+
+threading.Thread(target=listen, daemon=True).start()
+
+while True:
+    line = input("to|text: ")
+    to, text = line.split("|", 1)
+    ch.basic_publish(exchange="", routing_key="chat_inbox", body=f"{name}|{to}|{text}".encode())
+
+
+10.4 Evaluari 1-5 - RabbitMQ
+Enunt
+Pornind de la aplicația exemplu din laboratorul 10, să se modifice aceasta astfel încât să permită primirea de evaluari între 1-5 privind calitatea serviciului și să salveze numele utilizatorului și evaluarea într-un fișier local. Se vor utiliza microservicii Python și o comunicare prin RabbitMQ.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    B[Bidder] -->|ratings queue| RP[RatingProcessor]
+    RP --> File[ratings.txt]
+
+
+Fisiere noi
+Okazii_v2/RatingProcessor.py (NOU)
+
+
+
+Python
+import pika
+
+class RatingProcessor:
+    def __init__(self):
+        self.conn = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+        self.ch = self.conn.channel()
+        self.ch.queue_declare(queue="ratings")
+
+    def on_msg(self, ch, m, p, body):
+        user, r = body.decode().split("|")
+        r = int(r)
+        if 1 <= r <= 5:
+            with open("ratings.txt", "a") as f: f.write(f"{user}\t{r}\n")
+            print(f"Salvat: {user} -> {r}")
+
+    def run(self):
+        self.ch.basic_consume(queue="ratings", on_message_callback=self.on_msg, auto_ack=True)
+        self.ch.start_consuming()
+
+if __name__ == "__main__":
+    RatingProcessor().run()
+
+
+Modifica Bidder.py - dupa get_winner():
+
+
+
+Python
+import random
+ch2 = self.conn.channel(); ch2.queue_declare("ratings")
+ch2.basic_publish("", "ratings", f"{self.my_id}|{random.randint(1,5)}".encode())
+
+
+10.5 Statistici nr. mesaje - RabbitMQ
+Enunt
+Pornind de la aplicația exemplu din laboratorul 10, să se modifice aceasta astfel încât să se introducă un procesor de flux care să realizeze statistici cu privire la numărul de mesaje care au fost necesare pentru o licitație până la adjudecare și apoi să scrie aceste informații într-un fișier local. Se vor utiliza microservicii Python și o comunicare prin RabbitMQ.
+Dacă se consideră necesar se mai pot crea oricâte servicii se dorește conform gândirii studentului. Se vor respecta principiile SOLID pentru microservicii. La prezentare se va arăta diagrama de clase și se va explica aceasta împreună cu gradul de respectare a principiilor. Apoi va urma discuția pe cod.
+
+Diagrama de servicii
+
+
+
+Fragment de cod
+graph LR
+    A[Auctioneer] --> X[Exchange fanout]
+    X --> MC[MessageCounter]
+    MC --> File[nr_mesaje.txt]
+
+
+Fisiere noi
+Okazii_v2/MessageCounter.py (NOU)
+
+
+
+
+Python
+import pika
+
+class MessageCounter:
+    def __init__(self):
+        self.count = 0
+        self.conn = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+        self.ch = self.conn.channel()
+        self.ch.exchange_declare("topic_oferte_fanout", "fanout")
+        res = self.ch.queue_declare("", exclusive=True)
+        self.ch.queue_bind(exchange="topic_oferte_fanout", queue=res.method.queue)
+        self.queue_name = res.method.queue
+
+    def on_msg(self, ch, m, p, body):
+        self.count += 1
+        if body == b"final":
+            with open("nr_mesaje.txt", "a") as f: f.write(f"Licitatie: {self.count} mesaje\n")
+            print(f"Total mesaje: {self.count}")
+            self.ch.stop_consuming()
+
+    def run(self):
+        self.ch.basic_consume(queue=self.queue_name, on_message_callback=self.on_msg, auto_ack=True)
+        self.ch.start_consuming()
+
+if __name__ == "__main__":
+    MessageCounter().run()
+
